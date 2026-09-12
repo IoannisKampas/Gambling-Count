@@ -18,6 +18,7 @@ import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
+import { createHash } from 'node:crypto';
 
 const CANDIDATES = {
   win32: [
@@ -59,7 +60,10 @@ export function requireChrome() {
 }
 
 const PROXY = parseProxy(process.env.SESSION_PROXY);
-const PROXY_LOCAL_PORT = Number(process.env.SESSION_PROXY_PORT || 18923);
+// Derived from the proxy setting, so a forwarder still running from an older setting
+// (other credentials, or none) sits on a different port and is never reused by mistake.
+const PROXY_LOCAL_PORT = Number(process.env.SESSION_PROXY_PORT) ||
+  (PROXY ? 20000 + createHash('sha256').update(process.env.SESSION_PROXY).digest().readUInt16BE(0) % 10000 : 0);
 
 function parseProxy(raw) {
   if (!raw) return null;
@@ -79,6 +83,15 @@ export function proxySummary() {
 }
 
 let forwarder = null;
+let refusedWarned = false;
+
+// Said once per process, on stderr (tools print tokens on stdout).
+function refused(status) {
+  if (refusedWarned) return;
+  refusedWarned = true;
+  console.error('[warn] proxy ' + proxySummary() + ' refused the connection (HTTP ' + status + ')' +
+    (status === 407 ? ' - the username/password in SESSION_PROXY is wrong or missing' : ''));
+}
 
 // Start the credential-adding forwarder once per process. Every Chrome-launching tool
 // calls this, and a tool may exit while its browser lives on - so a process that finds
@@ -93,20 +106,49 @@ function ensureForwarder() {
     const headers = { ...req.headers };
     if (PROXY.auth) headers['proxy-authorization'] = PROXY.auth;
     const up = http.request({ host: PROXY.host, port: PROXY.port, method: req.method, path: req.url, headers },
-      (upRes) => { res.writeHead(upRes.statusCode, upRes.headers); upRes.pipe(res); });
+      (upRes) => {
+        if (upRes.statusCode === 407) {
+          refused(407);
+          upRes.resume();
+          res.writeHead(502).end();
+          return;
+        }
+        res.writeHead(upRes.statusCode, upRes.headers);
+        upRes.pipe(res);
+      });
     up.on('error', () => res.destroy());
     req.pipe(up);
   });
 
-  // https: open the tunnel upstream and splice the sockets. The upstream's own
-  // "200 Connection established" (or 407) passes straight back to Chrome.
+  // https: open the tunnel upstream, read its answer, then splice the sockets. The
+  // answer is checked rather than passed through: a 407 reaching Chrome pops a
+  // "127.0.0.1 requires a username and password" dialog that nobody is there to answer.
   server.on('connect', (req, client, head) => {
     const up = net.connect(PROXY.port, PROXY.host, () => {
       up.write('CONNECT ' + req.url + ' HTTP/1.1\r\nHost: ' + req.url + '\r\n' + authLine + '\r\n');
+    });
+    let buf = Buffer.alloc(0);
+    const onData = (chunk) => {
+      buf = Buffer.concat([buf, chunk]);
+      const end = buf.indexOf('\r\n\r\n');
+      if (end < 0) {
+        if (buf.length > 16384) { up.destroy(); client.destroy(); }
+        return;
+      }
+      up.off('data', onData);
+      const status = Number(buf.toString('latin1', 0, end).split(' ')[1]);
+      if (status !== 200) {
+        refused(status);
+        client.end('HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n');
+        up.destroy();
+        return;
+      }
+      client.write(buf);
       if (head.length) up.write(head);
       up.pipe(client);
       client.pipe(up);
-    });
+    };
+    up.on('data', onData);
     up.on('error', () => client.destroy());
     client.on('error', () => up.destroy());
   });
