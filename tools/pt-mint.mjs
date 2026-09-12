@@ -30,7 +30,7 @@ if (!ver) {
   const path = await import('node:path');
   const { fileURLToPath } = await import('node:url');
   const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-  const { requireChrome, platformArgs, displayProblem } = await import('../src/chrome.mjs');
+  const { requireChrome, platformArgs, displayProblem, stderrTail } = await import('../src/chrome.mjs');
   let CHROME;
   try { CHROME = requireChrome(); } catch (e) { console.error(e.message); process.exit(1); }
   const displayIssue = displayProblem();
@@ -42,9 +42,10 @@ if (!ver) {
     '--no-first-run', '--no-default-browser-check', ...platformArgs(),
     '--window-position=-32000,-32000', '--window-size=1200,800',
     'about:blank',
-  ], { detached: false, stdio: 'ignore' });
+  ], { detached: false, stdio: ['ignore', 'ignore', 'pipe'] });
+  const why = stderrTail(spawned);
   for (let i = 0; i < 60 && !ver; i++) { await new Promise((r) => setTimeout(r, 500)); ver = await cdpVersion(); }
-  if (!ver) { try { spawned.kill(); } catch {} console.error('Chrome never exposed CDP'); process.exit(1); }
+  if (!ver) { try { spawned.kill(); } catch {} console.error('Chrome never exposed CDP' + why()); process.exit(1); }
 }
 say('attached to ' + ver.Browser + (spawned ? ' (launched)' : ' (already running)'));
 

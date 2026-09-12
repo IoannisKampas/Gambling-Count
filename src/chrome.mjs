@@ -152,6 +152,33 @@ export function displayProblem() {
     'SESSION_HEADLESS=1 avoids needing one, but the operator answers headless with 403.';
 }
 
+// Keep the last few meaningful lines of a launched Chrome's stderr, so a launch that
+// never exposes CDP can say why ("Missing X server", "profile appears to be in use", …)
+// instead of timing out silently. Spawn with stdio ['ignore', 'ignore', 'pipe'].
+// Returns a function giving ": <reason>" (or "" when Chrome said nothing).
+export function stderrTail(child, keep = 4) {
+  const lines = [];
+  let exit = null;
+  child.on('exit', (code, signal) => { exit = signal || 'code ' + code; });
+  if (child.stderr) {
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (chunk) => {
+      for (const raw of chunk.split(/\r?\n/)) {
+        // drop the [pid:tid:time:LEVEL:file] prefix, and dbus chatter a VPS always prints
+        const line = raw.replace(/^\[[^\]]*\]\s*/, '').trim();
+        if (line && !/dbus|bus\.cc|org\.freedesktop/i.test(raw)) lines.push(line);
+      }
+      lines.splice(0, Math.max(0, lines.length - keep));
+    });
+  }
+  return () => {
+    const parts = [];
+    if (exit) parts.push('Chrome exited (' + exit + ')');
+    if (lines.length) parts.push(lines.join(' | ').slice(-400));
+    return parts.length ? ': ' + parts.join(' - ') : '';
+  };
+}
+
 // Kill the browser and everything it spawned. Chrome forks a process tree; killing the
 // launcher alone orphans the renderers, which then hold the user-data-dir lock and make
 // the next launch fail with "profile appears to be in use".

@@ -21,7 +21,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import WebSocket from 'ws';
 import { saveSecret, loadSecret } from './secret-store.mjs';
-import { requireChrome, platformArgs, displayProblem, killTree } from './chrome.mjs';
+import { requireChrome, platformArgs, displayProblem, killTree, stderrTail } from './chrome.mjs';
 
 // base name of the DPAPI-encrypted token in the per-user secret store. Each operator
 // gets its own entry so three logins can be persisted side by side; the historical
@@ -280,13 +280,15 @@ export class SessionProvider {
         : ['--window-position=-32000,-32000']),
       'about:blank',
     ], {
-      stdio: 'ignore',
+      // stderr kept so a failed launch can report Chrome's own reason
+      stdio: ['ignore', 'ignore', 'pipe'],
       // own process group, so #stopBrowser can take the whole tree down with it
       detached: process.platform !== 'win32',
     });
+    const why = stderrTail(this.chrome);
 
     const url = await endpointReady(30000);
-    if (!url) throw new Error('Chrome did not expose a CDP endpoint');
+    if (!url) throw new Error('Chrome did not expose a CDP endpoint' + why());
     return url;
   }
 
