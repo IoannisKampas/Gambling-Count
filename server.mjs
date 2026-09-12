@@ -15,6 +15,7 @@ import { DgaLobby, mergeResults } from './src/dga.mjs';
 import { PlaytechLobby, isRoulette as isPtRoulette } from './src/playtech.mjs';
 import { PatternTracker, GROUP_A, GROUP_B } from './src/patterns.mjs';
 import { SessionProvider } from './src/session.mjs';
+import { proxySummary } from './src/chrome.mjs';
 import * as operators from './src/operators.mjs';
 import { createLogger } from './src/logger.mjs';
 import { attachRecorder } from './src/recorder.mjs';
@@ -920,6 +921,7 @@ server.listen(PORT, HOST, async () => {
   console.log('  read-only; ' + MAX_CONCURRENT + ' concurrent tables per operator account');
   console.log('  logging to ' + log.path + (RECORD_DIR ? '; recording to ' + RECORD_DIR : '') + '\n');
   log.info('server started on :' + PORT);
+  if (proxySummary()) log.info('browser traffic via proxy ' + proxySummary());
 
   // Restore every operator session persisted from a previous run, so a restart comes
   // back with all accounts live. Env JSESSIONID still seeds the default operator.

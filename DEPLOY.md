@@ -171,6 +171,7 @@ defaults the page loads fine and then never updates, which looks like an app bug
 |---|---|
 | `no DISPLAY is set…` | The app was started outside systemd. `DISPLAY=:99 node server.mjs`, or use the unit. |
 | `Chrome did not expose a CDP endpoint` | Chrome died on launch. Reproduce it directly: `sudo -u bj -H DISPLAY=:99 google-chrome --version`, then check `/dev/shm` size and free memory. |
+| `game launch failed - HTTP 403 (text/html…)` | The operator refuses the host's IP (foreign or datacenter). Set `SESSION_PROXY=http://user:pass@host:port` to a proxy in the operator's country; only the browser uses it. Verify with `curl -x "$SESSION_PROXY" ipinfo.io`. |
 | Mint fails, `signed out` | The profile's login lapsed, or you copied `.chrome-profile` from Windows. Redo §4. |
 | Page loads, never updates | nginx buffering — §6. |
 | `profile appears to be in use` | An orphaned Chrome holds the lock: `sudo -u bj pkill -f user-data-dir=.*Blackjack`. |

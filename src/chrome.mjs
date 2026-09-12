@@ -7,9 +7,17 @@
 // so it is checked explicitly and reported rather than left to Chrome's stderr.
 //
 // Override the binary with CHROME_PATH when it is somewhere unusual.
+//
+// SESSION_PROXY=http://user:pass@host:port sends the browser's traffic through an
+// upstream proxy (a VPS whose own IP the operator refuses). Chrome's --proxy-server
+// cannot carry credentials, so a tiny forwarder on 127.0.0.1 adds them. Node's own
+// requests (token checks, lobby, table sockets) go to the provider, not the operator,
+// and stay on the host's IP.
 
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
+import http from 'node:http';
+import net from 'node:net';
 
 const CANDIDATES = {
   win32: [
@@ -50,6 +58,68 @@ export function requireChrome() {
   throw new Error('no Chrome/Edge found — ' + hint);
 }
 
+const PROXY = parseProxy(process.env.SESSION_PROXY);
+const PROXY_LOCAL_PORT = Number(process.env.SESSION_PROXY_PORT || 18923);
+
+function parseProxy(raw) {
+  if (!raw) return null;
+  const u = new URL(raw.includes('://') ? raw : 'http://' + raw);
+  if (u.protocol !== 'http:') throw new Error('SESSION_PROXY must be an http:// proxy');
+  const user = decodeURIComponent(u.username);
+  return {
+    host: u.hostname,
+    port: Number(u.port || 80),
+    auth: user ? 'Basic ' + Buffer.from(user + ':' + decodeURIComponent(u.password)).toString('base64') : null,
+  };
+}
+
+// host:port of the upstream proxy, never the credentials; null when none is set.
+export function proxySummary() {
+  return PROXY ? PROXY.host + ':' + PROXY.port : null;
+}
+
+let forwarder = null;
+
+// Start the credential-adding forwarder once per process. Every Chrome-launching tool
+// calls this, and a tool may exit while its browser lives on - so a process that finds
+// the port taken keeps retrying, and takes over once the previous owner is gone.
+function ensureForwarder() {
+  if (!PROXY || forwarder) return;
+  const authLine = PROXY.auth ? 'Proxy-Authorization: ' + PROXY.auth + '\r\n' : '';
+
+  const server = http.createServer((req, res) => {
+    // plain http: the request line already carries an absolute URL, which the
+    // upstream proxy accepts as-is
+    const headers = { ...req.headers };
+    if (PROXY.auth) headers['proxy-authorization'] = PROXY.auth;
+    const up = http.request({ host: PROXY.host, port: PROXY.port, method: req.method, path: req.url, headers },
+      (upRes) => { res.writeHead(upRes.statusCode, upRes.headers); upRes.pipe(res); });
+    up.on('error', () => res.destroy());
+    req.pipe(up);
+  });
+
+  // https: open the tunnel upstream and splice the sockets. The upstream's own
+  // "200 Connection established" (or 407) passes straight back to Chrome.
+  server.on('connect', (req, client, head) => {
+    const up = net.connect(PROXY.port, PROXY.host, () => {
+      up.write('CONNECT ' + req.url + ' HTTP/1.1\r\nHost: ' + req.url + '\r\n' + authLine + '\r\n');
+      if (head.length) up.write(head);
+      up.pipe(client);
+      client.pipe(up);
+    });
+    up.on('error', () => client.destroy());
+    client.on('error', () => up.destroy());
+  });
+
+  server.on('error', (e) => {
+    forwarder = null;
+    if (e.code === 'EADDRINUSE') setTimeout(ensureForwarder, 2000).unref();
+  });
+  server.listen(PROXY_LOCAL_PORT, '127.0.0.1');
+  server.unref(); // never the reason a tool stays alive
+  forwarder = server;
+}
+
 // Flags the host itself demands, on top of whatever the caller passes.
 //
 //   --disable-dev-shm-usage : containers and small VPSes ship a 64MB /dev/shm, which
@@ -57,9 +127,17 @@ export function requireChrome() {
 //   --no-sandbox            : only when running as root, where the sandbox refuses to
 //                             start at all. Prefer a non-root service user instead;
 //                             this is a fallback, not a recommendation.
+//   --proxy-server          : only with SESSION_PROXY. WebRTC is held to the proxy too,
+//                             or it would reveal the host's own IP around it.
 export function platformArgs() {
-  if (process.platform !== 'linux') return [];
-  const args = ['--disable-dev-shm-usage'];
+  const args = [];
+  if (PROXY) {
+    ensureForwarder();
+    args.push('--proxy-server=http://127.0.0.1:' + PROXY_LOCAL_PORT,
+      '--force-webrtc-ip-handling-policy=disable_non_proxied_udp');
+  }
+  if (process.platform !== 'linux') return args;
+  args.push('--disable-dev-shm-usage');
   if (typeof process.getuid === 'function' && process.getuid() === 0) args.push('--no-sandbox');
   return args;
 }

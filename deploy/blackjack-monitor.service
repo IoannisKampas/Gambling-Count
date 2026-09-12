@@ -24,6 +24,10 @@ Environment=DISPLAY=:99
 Environment=HOST=127.0.0.1
 Environment=PORT=3001
 Environment=NODE_ENV=production
+# Optional: SESSION_PROXY=http://user:pass@host:port, for a host whose own IP the
+# operator refuses. Keep it out of this world-readable unit - put it in a root-owned
+# 0600 file instead.
+EnvironmentFile=-/etc/bj-monitor.env
 
 # Modest hardening. Deliberately NOT PrivateTmp (see xvfb.service) and not
 # ProtectSystem=strict, since the app writes its log, data/ and .chrome-profile

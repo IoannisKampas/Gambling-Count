@@ -14,7 +14,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as operators from '../src/operators.mjs';
-import { requireChrome, platformArgs, displayProblem } from '../src/chrome.mjs';
+import { requireChrome, platformArgs, displayProblem, proxySummary } from '../src/chrome.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PROFILE = path.join(ROOT, '.chrome-profile');
@@ -44,11 +44,20 @@ if (cfg.mint === 'gamePage' && !cfg.gameUrl) {
 }
 console.log('');
 
-spawn(bin, [
+const child = spawn(bin, [
   '--remote-debugging-port=' + PORT,
   '--user-data-dir=' + PROFILE,
   '--no-first-run',
   '--no-default-browser-check',
   ...platformArgs(),
   target,
-], { stdio: 'ignore', detached: true }).unref();
+], { stdio: 'ignore', detached: true });
+
+// With SESSION_PROXY the browser's route out runs inside this process, so stay up
+// until the window is closed; otherwise hand the shell straight back.
+if (proxySummary()) {
+  console.log('  via proxy ' + proxySummary() + ' - leave this running until you close the window.\n');
+  child.on('exit', () => process.exit(0));
+} else {
+  child.unref();
+}
