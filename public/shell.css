@@ -1,0 +1,89 @@
+/* App shell — the left navigation rail shared by every page.
+   Each page defines its own design tokens; this file only consumes them, so the rail
+   looks native on all three walls without duplicating the palette. */
+
+body.app{display:flex;align-items:stretch;min-height:100vh;margin:0}
+
+/* ------------------------------------------------------------------- rail --- */
+.rail{
+  width:194px;flex:none;display:flex;flex-direction:column;
+  border-right:1px solid var(--border);
+  background:color-mix(in srgb,var(--surface-sunk) 60%,transparent);
+  position:sticky;top:0;height:100vh;z-index:40;
+}
+.rail .brand{
+  display:flex;align-items:center;gap:9px;padding:14px 14px 16px;
+  border-bottom:1px solid var(--divider);
+}
+.rail .brand .mark{
+  width:26px;height:32px;border-radius:6px;background:var(--brand-surface);
+  border:1px solid var(--brand);display:grid;place-items:center;flex:none;
+  font-family:var(--f-mono);font-weight:700;font-size:12px;color:var(--brand-ink);
+}
+.rail .brand .txt{
+  font-family:var(--f-cond);font-weight:600;font-size:14px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-title);line-height:1.05;
+}
+.rail .brand .txt small{
+  display:block;font-family:var(--f-mono);font-weight:500;font-size:8px;
+  letter-spacing:.14em;color:var(--ink-fainter);margin-top:2px;
+}
+
+.rail nav{padding:12px 10px;display:flex;flex-direction:column;gap:3px}
+.rail .item{
+  display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:7px;
+  text-decoration:none;border:1px solid transparent;
+  font-family:var(--f-body);font-weight:500;font-size:13px;color:var(--ink-dim);
+  transition:background .12s,color .12s,border-color .12s;
+}
+.rail .item .ico{
+  width:18px;text-align:center;flex:none;font-size:13px;color:var(--ink-faint);
+  transition:color .12s;
+}
+.rail .item:hover{background:var(--row-hover);color:var(--ink)}
+.rail .item:hover .ico{color:var(--ink-2)}
+.rail .item.on{background:var(--brand-surface);border-color:var(--brand);color:var(--brand-ink)}
+.rail .item.on .ico{color:var(--brand-ink)}
+/* count badge, e.g. live tables on the blackjack wall */
+.rail .item .badge{
+  margin-left:auto;font-family:var(--f-mono);font-weight:700;font-size:9.5px;
+  color:var(--ink-fainter);
+}
+.rail .item.on .badge{color:var(--brand-ink)}
+
+.rail .sect{
+  margin:14px 10px 6px;font-family:var(--f-mono);font-weight:500;font-size:8px;
+  letter-spacing:.18em;text-transform:uppercase;color:var(--ink-fainter);
+  display:flex;align-items:center;gap:8px;
+}
+.rail .sect:after{content:'';flex:1 1 auto;height:1px;background:var(--divider)}
+
+.rail .foot{
+  margin-top:auto;padding:12px 14px 14px;border-top:1px solid var(--divider);
+  font-family:var(--f-mono);font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-fainter);line-height:1.7;
+}
+.rail .foot .dot{
+  display:inline-block;width:6px;height:6px;border-radius:50%;
+  background:var(--dot-closed,#3A404A);margin-right:6px;vertical-align:middle;
+}
+.rail .foot .dot.live{background:var(--hot,#4FD98A)}
+
+/* ------------------------------------------------------------------- page --- */
+.page{flex:1 1 auto;min-width:0;display:flex;flex-direction:column}
+
+/* The rail owns the left edge, so page headers stop pretending to be full-width. */
+.page > header{padding-left:20px;padding-right:20px}
+
+@media (max-width:900px){
+  body.app{flex-direction:column}
+  .rail{
+    width:100%;height:auto;position:sticky;top:0;flex-direction:row;align-items:center;
+    border-right:0;border-bottom:1px solid var(--border);overflow-x:auto;
+  }
+  .rail .brand{border-bottom:0;padding:10px 12px;flex:none}
+  .rail .brand .txt small{display:none}
+  .rail nav{flex-direction:row;padding:8px;gap:4px}
+  .rail .item{white-space:nowrap;padding:8px 10px}
+  .rail .sect,.rail .foot{display:none}
+}

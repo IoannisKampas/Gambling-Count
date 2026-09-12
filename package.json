@@ -1,0 +1,23 @@
+{
+  "name": "blackjack-counting",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Read-only monitor for live Blackjack table results",
+  "scripts": {
+    "dev": "node server.mjs",
+    "start": "node server.mjs",
+    "login": "node tools/login.mjs",
+    "session": "node tools/get-session.mjs",
+    "capture": "node tools/capture.mjs",
+    "monitor": "node tools/monitor.mjs",
+    "tables": "node tools/list-tables.mjs",
+    "creds": "node tools/creds.mjs",
+    "autologin": "node tools/auto-login.mjs",
+    "probe:platform": "node tools/probe-platform.mjs",
+    "test:patterns": "node tools/patterns-test.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.21.3"
+  }
+}

@@ -1,0 +1,36 @@
+#!/bin/sh
+# Push-to-deploy hook. Install as /home/bj/monitor.git/hooks/post-receive (chmod +x).
+#
+# `git push production main` from the laptop lands here: the bare repo takes the objects,
+# this checks them out into the live directory, installs deps if the lockfile moved, and
+# restarts the service. Untracked and ignored files - credentials.json, .chrome-profile,
+# the lobby caches, the log - are left alone by `checkout -f`, which is the whole reason
+# this works as a deploy mechanism.
+
+set -e
+
+WORK=/home/bj/Blackjack-Counting
+REPO=/home/bj/monitor.git
+BRANCH=main
+
+while read -r old new ref; do
+  [ "$ref" = "refs/heads/$BRANCH" ] || continue
+
+  git --work-tree="$WORK" --git-dir="$REPO" checkout -f "$BRANCH"
+
+  # the hook runs with GIT_DIR set; anything below that shells out needs it gone
+  unset GIT_DIR GIT_WORK_TREE
+  cd "$WORK"
+
+  # only reinstall when the lockfile actually changed - npm ci wipes node_modules and
+  # takes long enough to notice on every push otherwise.
+  # ($old is all-zeroes on the very first push, so install unconditionally then.)
+  case "$old" in
+    0000000*) npm ci --omit=dev ;;
+    *) git --git-dir="$REPO" diff --name-only "$old" "$new" | grep -q '^package-lock\.json$' \
+         && npm ci --omit=dev || true ;;
+  esac
+
+  sudo -n /bin/systemctl restart blackjack-monitor
+  echo "deployed $(echo "$new" | cut -c1-8) -> restarted"
+done

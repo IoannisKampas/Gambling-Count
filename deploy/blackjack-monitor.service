@@ -1,0 +1,41 @@
+[Unit]
+Description=Live casino monitor (read-only)
+After=network-online.target xvfb.service
+Wants=network-online.target
+Requires=xvfb.service
+# A crash loop here would hammer the operator's login chain, which is exactly the
+# behaviour that gets an account flagged. Five tries in five minutes, then stop.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=bj
+Group=bj
+WorkingDirectory=/home/bj/Blackjack-Counting
+ExecStart=/usr/bin/node server.mjs
+Restart=always
+RestartSec=10
+
+# The browser this app drives needs a display; :99 is the one xvfb.service provides.
+Environment=DISPLAY=:99
+# Bind to loopback only - this server has no authentication of its own, so nginx in
+# front of it is what keeps it private. Drop this line to expose it directly.
+Environment=HOST=127.0.0.1
+Environment=PORT=3001
+Environment=NODE_ENV=production
+
+# Modest hardening. Deliberately NOT PrivateTmp (see xvfb.service) and not
+# ProtectSystem=strict, since the app writes its log, data/ and .chrome-profile
+# inside WorkingDirectory.
+NoNewPrivileges=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bj-monitor
+
+[Install]
+WantedBy=multi-user.target

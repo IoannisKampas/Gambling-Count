@@ -1,0 +1,27 @@
+node_modules/
+.chrome-profile/
+capture/*.jsonl
+capture/bodies/
+# secrets are stored outside the repo (Windows: DPAPI in %LOCALAPPDATA%\plfa-secrets;
+# Linux/macOS: AES under ~/.local/share/plfa-secrets);
+# these patterns are belt-and-suspenders in case anything token-shaped lands locally
+.env
+*.env
+*.secret
+*.dat
+secrets/
+scraper.log
+*.log
+recordings/
+# per-user operator config (game-page URLs for auto-refresh); not secret, but local
+data/operators.json
+
+# lobby caches, rewritten from the DGA/Playtech feeds at runtime. Tracking them would
+# mean every deploy overwrites the live host's cache with a stale copy, and the server's
+# own writes would leave the working tree permanently dirty. data/table-servers.json is
+# NOT here - that one is a static mapping and belongs in the repo.
+data/lobby-*.json
+# plaintext credentials. Read directly by the app (and it wins over the encrypted
+# store), or imported and shredded by `npm run creds` - either way, never in git
+data/credentials.json
+credentials.json

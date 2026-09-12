@@ -1,0 +1,1054 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blackjack Wall</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600&family=Barlow:wght@400;500&family=JetBrains+Mono:wght@500;700&display=swap">
+<link rel="stylesheet" href="/shell.css">
+<style>
+/* ============================================================================
+   Design tokens — BJ Wall Design Spec §2. Every colour in this file comes from
+   here; no raw hex appears in a component rule.
+   ========================================================================== */
+:root{
+  /* surfaces §2 */
+  --bg:#16181D;
+  --bg-wash:#1F2530;            /* radial wash stop, §2.1 */
+  --surface:#1E212A;
+  --surface-sunk:#1A1D24;
+  --surface-raised:#23272F;
+  --border:#30353F;
+  --border-hover:#424854;
+  --divider:#282D35;
+  --row-hover:#24282F;
+  --track:#2C313A;
+
+  /* felt — hand area only §2 */
+  --felt-top:#1E3350;
+  --felt-bottom:#182A44;
+  --hole-a:#2A4470;             /* hole-card stripe */
+  --hole-b:#22385C;
+
+  /* text §2 */
+  --ink:#EEF0F5;
+  --ink-title:#F6F8FB;          /* spec gives this value under --ink, unnamed */
+  --ink-2:#D5D9E2;
+  --ink-3:#C3C8D3;
+  --ink-muted:#9FA6B3;
+  --ink-dim:#979FAC;
+  --ink-faint:#9BA2AF;
+  --ink-fainter:#949CA8;
+  --ink-disabled:#5B616C;
+
+  /* count scale — the ONLY green and red in the UI §2 */
+  --count-hot:#4FD98A;
+  --count-warm:#7FCF9B;
+  --count-plus:#9FD6B5;
+  --count-neutral:#9FA6B3;
+  --count-minus:#E8706E;
+
+  /* chrome / brand (blue) §2 */
+  --brand:#3C5A8A;
+  --brand-surface:#223C5C;
+  --brand-ink:#A9C8F0;
+  --pen:#4A6E9E;
+  --btn-border:#373D47;
+  --dot-closed:#3A404A;
+  --bar-closed:#313742;
+
+  /* round state (amber — deliberately off the count scale) §2 */
+  --tag-dealing-bg:#1F3F33;
+  --tag-dealing-ink:#6FD3A5;
+  --tag-betting-bg:#34301F;
+  --tag-betting-ink:#E0B15A;
+  --dealer-label:#E0B15A;
+  --advice-hot:#1E3A32;
+
+  /* playing cards §2 */
+  --card-face:#F7F8FA;
+  --card-ink:#22262B;
+  --card-red:#C4453C;
+
+  /* type §3 */
+  --f-cond:'Barlow Condensed',	'Arial Narrow',sans-serif;
+  --f-body:'Barlow',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --f-mono:'JetBrains Mono','SFMono-Regular',Consolas,monospace;
+
+  color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+  background:radial-gradient(1200px 600px at 20% -10%,var(--bg-wash) 0%,var(--bg) 60%);
+  background-attachment:fixed;
+  min-height:100vh;color:var(--ink);
+  font:400 13px/1.5 var(--f-body);-webkit-font-smoothing:antialiased;
+}
+
+/* shared type roles §3 */
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.cond{font-family:var(--f-cond);font-weight:600;text-transform:uppercase;letter-spacing:.07em}
+.micro{font-family:var(--f-mono);font-weight:500;font-size:9px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-faint)}
+
+/* ---------------------------------------------------------------- header --- */
+header{position:sticky;top:0;z-index:20;backdrop-filter:blur(12px);
+  background:color-mix(in srgb,var(--bg) 92%,transparent);
+  border-bottom:1px solid var(--border);
+  padding:12px 24px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.logo{width:24px;height:32px;border-radius:5px;background:var(--brand-surface);
+  border:1px solid var(--brand);display:grid;place-items:center;flex:none;
+  font-family:var(--f-mono);font-weight:700;font-size:11px;color:var(--brand-ink)}
+h1{margin:0;font-family:var(--f-cond);font-weight:600;font-size:19px;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--ink-title);white-space:nowrap}
+.tally{font-family:var(--f-mono);font-weight:500;font-size:10px;letter-spacing:.1em;
+  color:var(--ink-fainter);white-space:nowrap}
+.nav{display:flex;gap:0;border:1px solid var(--border);border-radius:6px;overflow:hidden}
+.nav a{font:500 11px/1 var(--f-mono);letter-spacing:.1em;text-transform:uppercase;
+  padding:8px 12px;color:var(--ink-dim);text-decoration:none;background:var(--surface-raised)}
+.nav a.on{background:var(--brand-surface);color:var(--brand-ink)}
+.nav a:hover:not(.on){color:var(--ink)}
+.spacer{flex:1 1 auto}
+
+.stat{display:flex;align-items:baseline;gap:6px;white-space:nowrap}
+.stat .v{font-family:var(--f-mono);font-weight:700;font-size:15px;color:var(--ink)}
+.stat .v.hot{color:var(--count-hot)}
+.stat .l{font-family:var(--f-mono);font-weight:500;font-size:9px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-fainter)}
+
+/* buttons — ghost by default §2 (--btn-border) */
+button{font:500 11px/1 var(--f-mono);letter-spacing:.1em;text-transform:uppercase;
+  cursor:pointer;border-radius:6px;border:1px solid var(--btn-border);
+  background:var(--surface-raised);color:var(--ink-dim);padding:8px 11px;
+  transition:border-color .15s}
+button:hover:not(:disabled){border-color:var(--border-hover);color:var(--ink)}
+button:disabled{opacity:.4;cursor:not-allowed}
+button.brand{border-color:var(--brand);background:var(--brand-surface);color:var(--brand-ink)}
+
+/* session pills */
+.sessions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.sess{display:flex;align-items:center;gap:7px;white-space:nowrap;cursor:pointer;
+  padding:6px 9px;border:1px solid var(--border);border-radius:6px;
+  background:var(--surface-raised);transition:border-color .15s}
+.sess:hover{border-color:var(--border-hover)}
+.sess .d{width:7px;height:7px;border-radius:50%;background:var(--dot-closed);flex:none}
+.sess.ok .d{background:var(--pen)}
+.sess.bad .d{background:var(--count-minus)}
+.sess.busy .d{background:var(--tag-betting-ink)}
+.sess b{font-family:var(--f-cond);font-weight:600;font-size:12px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--ink-2)}
+.sess .cap{font-family:var(--f-mono);font-weight:700;font-size:10px;color:var(--ink-faint)}
+.sess .cap.full{color:var(--tag-betting-ink)}
+.sess .note{font-family:var(--f-mono);font-size:9px;letter-spacing:.06em;color:var(--ink-fainter)}
+.sess .x{border:0;background:transparent;color:var(--ink-fainter);padding:0 0 0 1px;
+  font-size:12px;line-height:1;letter-spacing:0}
+.sess .x:hover{color:var(--ink);border:0}
+
+/* settings §9 */
+.cfg{display:flex;gap:6px;align-items:center}
+.step{display:flex;align-items:center;gap:0;border:1px solid var(--border);
+  border-radius:6px;background:var(--surface-raised);overflow:hidden}
+.step button{border:0;border-radius:0;padding:8px 9px;background:transparent}
+.step .val{font-family:var(--f-mono);font-weight:700;font-size:11px;color:var(--ink-2);
+  min-width:56px;text-align:center;letter-spacing:.06em}
+
+/* --------------------------------------------------------------- sections --- */
+section{padding:20px 24px 4px}
+.shead{display:flex;align-items:center;gap:12px;margin:0 0 12px}
+.shead h2{margin:0;font-family:var(--f-cond);font-weight:600;font-size:12px;
+  letter-spacing:.28em;text-transform:uppercase;color:var(--brand-ink)}
+.shead .rule{flex:1 1 auto;height:1px;
+  background:linear-gradient(90deg,var(--border),transparent)}
+.shead .meta{font-family:var(--f-mono);font-weight:500;font-size:9px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-fainter)}
+
+/* ------------------------------------------------------------- live board --- */
+.board{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(330px,1fr))}
+
+@keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes breathe{0%,100%{opacity:1}50%{opacity:.45}}
+
+.tbl{background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  overflow:hidden;display:flex;flex-direction:column;
+  animation:rise .4s ease both;transition:border-color .15s}
+.tbl:hover{border-color:var(--border-hover)}
+
+/* 1. header §5.1 */
+.thead{display:flex;align-items:flex-start;gap:8px;padding:11px 13px 10px}
+.tname{font-family:var(--f-cond);font-weight:600;font-size:17px;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--ink-title);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;min-width:0;line-height:1.15}
+.tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
+.tag{font-family:var(--f-mono);font-weight:500;font-size:8px;letter-spacing:.14em;
+  text-transform:uppercase;padding:2px 5px;border-radius:3px;
+  background:var(--surface-raised);color:var(--ink-dim);white-space:nowrap}
+.tag.dealing{background:var(--tag-dealing-bg);color:var(--tag-dealing-ink)}
+.tag.betting{background:var(--tag-betting-bg);color:var(--tag-betting-ink)}
+.tag.live{animation:breathe 1.8s ease-in-out infinite}
+
+.counts{margin-left:auto;display:flex;gap:12px;align-items:flex-start;flex:none}
+.cnum{text-align:right;line-height:1}
+.cnum .rc{font-family:var(--f-mono);font-weight:700;font-size:15px;color:var(--ink-3);display:block}
+.cnum .tc{font-family:var(--f-mono);font-weight:700;font-size:34px;display:block;
+  letter-spacing:-.02em;line-height:1}
+.cnum.tcol{min-width:62px}                 /* §5.1 — "-10.5" must never clip */
+.cnum .lab{display:block;margin-top:5px;font-family:var(--f-mono);font-weight:500;
+  font-size:8px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint)}
+
+/* heat scale §7 — count colours only */
+.h-hot{color:var(--count-hot)} .h-warm{color:var(--count-warm)} .h-plus{color:var(--count-plus)}
+.h-neutral{color:var(--count-neutral)} .h-minus{color:var(--count-minus)}
+
+/* 2. bet advice strip §5.2 */
+.advice{display:flex;align-items:center;gap:9px;padding:7px 13px;
+  background:var(--surface-sunk);border-top:1px solid var(--divider);
+  border-bottom:1px solid var(--divider);transition:background .3s}
+.advice.hot{background:var(--advice-hot)}
+.advice .lab{font-family:var(--f-mono);font-weight:500;font-size:8px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-faint);flex:none}
+.advice .rec{font-family:var(--f-mono);font-weight:700;font-size:11px;letter-spacing:.08em;
+  text-transform:uppercase;flex:none}
+.advice .bar{flex:1 1 auto;height:4px;border-radius:2px;background:var(--track);overflow:hidden}
+.advice .bar i{display:block;height:100%;border-radius:2px}
+
+/* 3. seat area §5.3 — fixed footprint */
+.felt{min-height:174px;padding:10px 13px;
+  background:linear-gradient(180deg,var(--felt-top),var(--felt-bottom));
+  display:flex;flex-direction:column;gap:1px}
+.srow{display:flex;align-items:center;gap:8px;padding:3px 0;min-height:26px}
+.srow+.srow{border-top:1px solid color-mix(in srgb,var(--felt-top) 60%,transparent)}
+.slab{width:52px;flex:none;font-family:var(--f-mono);font-weight:500;font-size:9px;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint)}
+.srow.dealer .slab{color:var(--dealer-label);font-weight:700}
+.pills{display:flex;gap:3px;flex-wrap:wrap;flex:1 1 auto;min-width:0;align-items:center}
+.stot{font-family:var(--f-mono);font-weight:700;font-size:14px;color:var(--ink-2);
+  flex:none;text-align:right;min-width:38px}
+.stot.hot{color:var(--count-hot)} .stot.minus{color:var(--count-minus)}
+.sbet{font-family:var(--f-mono);font-weight:500;font-size:9px;color:var(--ink-faint);flex:none}
+.sdec{font-family:var(--f-mono);font-weight:500;font-size:8px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink-faint);
+  border:1px solid color-mix(in srgb,var(--ink-faint) 40%,transparent);
+  border-radius:3px;padding:1px 4px;flex:none}
+
+/* playing cards §2 */
+.pc{min-width:19px;height:26px;padding:0 4px;border-radius:4px;background:var(--card-face);
+  color:var(--card-ink);display:inline-flex;align-items:center;justify-content:center;gap:1px;
+  font-family:var(--f-mono);font-weight:700;font-size:11px;flex:none}
+.pc.red{color:var(--card-red)}
+.pc.back{background:repeating-linear-gradient(45deg,var(--hole-a),var(--hole-a) 3px,
+  var(--hole-b) 3px,var(--hole-b) 6px);color:transparent}
+
+/* no-hand state, same height §5.3 */
+.shuffle{flex:1 1 auto;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:9px;animation:breathe 1.6s ease-in-out infinite}
+.ring{width:22px;height:22px;border-radius:50%;
+  border:2px solid color-mix(in srgb,var(--brand-ink) 22%,transparent);
+  border-top-color:var(--brand-ink)}
+.shuffle span{font-family:var(--f-mono);font-weight:500;font-size:9px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-faint)}
+
+/* 4. footer §5.4 */
+.tfoot{padding:9px 13px;display:flex;flex-direction:column;gap:7px}
+.penrow{display:flex;align-items:center;gap:8px}
+.penbar{flex:1 1 auto;height:5px;border-radius:3px;background:var(--track);overflow:hidden}
+.penbar i{display:block;height:100%;border-radius:3px;
+  background:linear-gradient(90deg,var(--brand),var(--pen))}
+.penlab{font-family:var(--f-mono);font-weight:500;font-size:9px;letter-spacing:.1em;
+  color:var(--ink-faint);flex:none}
+.fmeta{display:flex;align-items:center;gap:7px;font-family:var(--f-mono);font-weight:500;
+  font-size:9px;letter-spacing:.06em;color:var(--ink-fainter);min-width:0}
+.fmeta .dl{color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fmeta .sep{color:var(--border-hover)}
+.fmeta button{margin-left:auto;padding:5px 9px;font-size:9px}
+.fmeta button:hover{border-color:var(--count-minus);color:var(--count-minus)}
+
+/* ------------------------------------------------------------ all tables --- */
+.toolbar{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+input[type=search],select{font:400 12px var(--f-body);padding:8px 10px;border-radius:6px;
+  border:1px solid var(--border);background:var(--surface-raised);color:var(--ink-2);
+  transition:border-color .15s}
+input[type=search]{flex:1 1 200px;min-width:150px}
+input[type=search]::placeholder{color:var(--ink-fainter)}
+input[type=search]:focus,select:focus{outline:none;border-color:var(--brand)}
+select{cursor:pointer}
+.tgl{font:500 10px/1 var(--f-mono);letter-spacing:.12em;text-transform:uppercase;
+  cursor:pointer;padding:8px 10px;border:1px solid var(--border);border-radius:6px;
+  background:var(--surface-raised);color:var(--ink-dim);user-select:none;white-space:nowrap;
+  transition:border-color .15s}
+.tgl:hover{border-color:var(--border-hover)}
+.tgl.on{border-color:var(--brand);background:var(--brand-surface);color:var(--brand-ink)}
+.tgl input{display:none}
+.err{font:500 11px var(--f-mono);color:var(--count-minus);flex-basis:100%}
+
+/* one dense list container §6; template is declared once so header and rows
+   are byte-identical §4 */
+.list{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.lhead,.lrow{display:grid;
+  grid-template-columns:14px minmax(120px,1.4fr) minmax(90px,1fr) 64px 58px minmax(70px,90px) 56px;
+  gap:12px;align-items:center;padding:0 14px}
+.lhead{height:32px;background:var(--surface-sunk);border-bottom:1px solid var(--border)}
+.lhead span{font-family:var(--f-mono);font-weight:500;font-size:8px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-fainter)}
+.lhead .r,.lrow .r{text-align:right}
+.lrow{height:44px;border-bottom:1px solid var(--divider);transition:background .15s}
+.lrow:last-child{border-bottom:0}
+.lrow:hover{background:var(--row-hover)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--pen)}
+.dot.hot{background:var(--count-hot)}
+.dot.closed{background:var(--dot-closed)}
+.lname{min-width:0}
+.lname b{display:block;font-family:var(--f-cond);font-weight:600;font-size:14px;
+  letter-spacing:.05em;text-transform:uppercase;color:var(--ink-title);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lrow.closed .lname b{color:var(--ink-faint)}
+.lcas{font-family:var(--f-mono);font-weight:500;font-size:8px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink-fainter)}
+.ldeal,.llim{font-family:var(--f-body);font-size:11px;color:var(--ink-muted);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.llim{font-family:var(--f-mono);font-size:10px}
+.lrc{font-family:var(--f-mono);font-weight:700;font-size:12px;color:var(--ink-3)}
+.ltc{font-family:var(--f-mono);font-weight:700;font-size:15px;display:block;line-height:1.1}
+.lpen{display:block;height:3px;border-radius:2px;background:var(--track);overflow:hidden;margin-top:4px}
+.lpen i{display:block;height:100%;background:linear-gradient(90deg,var(--brand),var(--pen))}
+.lrow.closed .lpen{background:var(--bar-closed)}
+.lrow.closed .lrc,.lrow.closed .ltc{color:var(--ink-disabled)}
+.lrow button{width:100%;padding:6px 0;font-size:9px}
+.lrow button.on{border-color:var(--brand);background:var(--brand-surface);color:var(--brand-ink)}
+
+.empty{font-family:var(--f-mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-fainter);text-align:center;padding:40px 0}
+footer{padding:22px 24px 30px;font-family:var(--f-mono);font-size:9px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink-fainter)}
+
+@media (prefers-reduced-motion:reduce){
+  .tbl,.shuffle,.tag.live{animation:none}
+  *{transition:none!important}
+}
+</style>
+</head>
+<body class="app">
+
+<div class="rail">
+  <div class="brand">
+    <span class="mark">A♠</span>
+    <span class="txt">Casino Wall<small>read-only monitor</small></span>
+  </div>
+  <nav>
+    <a class="item on" href="/"><span class="ico">▦</span>Blackjack<span class="badge" id="railbj"></span></a>
+    <a class="item" href="/roulette"><span class="ico">◉</span>Roulette</a>
+    <a class="item" href="/patterns"><span class="ico">◈</span>Patterns</a>
+    <a class="item" href="/settings"><span class="ico">⚙</span>Settings</a>
+  </nav>
+  <div class="foot">
+    <span id="railstat"><span class="dot"></span>starting…</span>
+  </div>
+</div>
+
+<div class="page">
+
+<header>
+  <span class="logo">A♠</span>
+  <h1>Blackjack Wall</h1>
+  <span class="tally" id="tally">—</span>
+  <span class="spacer"></span>
+
+  <span class="stat"><span class="v" id="liven">0</span><span class="l">/ <span id="livemax">0</span> live</span></span>
+  <span class="stat"><span class="v hot" id="hotn">0</span><span class="l">hot</span></span>
+
+  <span class="sessions" id="sessions"></span>
+
+  <span class="cfg">
+    <span class="step" title="hot threshold — drives the heat scale, the HOT filter and the hot counter">
+      <button id="hotdn">−</button><span class="val" id="hotval">HOT ≥ 2</span><button id="hotup">+</button>
+    </span>
+    <button id="cfgadvice" title="show the bet-advice strip">Advice</button>
+    <button id="cfgcompact" title="hide card pills, keep totals">Compact</button>
+  </span>
+
+  <button id="addsess">+ Session</button>
+  <button id="autofill" class="brand" title="fill every session's free slots with the busiest open tables (DGA radar picks them)">Auto-fill</button>
+  <button id="clear">Unpin all</button>
+</header>
+
+<section id="livesec" hidden>
+  <div class="shead"><h2>Live board</h2><span class="rule"></span>
+    <span class="meta" id="boardmeta"></span></div>
+  <div class="board" id="board"></div>
+</section>
+
+<section>
+  <div class="shead"><h2>All tables</h2><span class="rule"></span>
+    <span class="meta" id="count"></span></div>
+
+  <div class="toolbar">
+    <input id="filter" type="search" placeholder="Search name, dealer or casino…   ( / )">
+    <select id="op" title="casino account"><option value="">All casinos</option></select>
+    <select id="kind" title="table type"><option value="">All types</option></select>
+    <select id="stake" title="minimum bet">
+      <option value="">Any stake</option>
+      <option value="1">Min ≤ 1</option>
+      <option value="5">Min ≤ 5</option>
+      <option value="20">Min ≤ 20</option>
+      <option value="50">Min ≤ 50</option>
+      <option value="100">Min ≤ 100</option>
+    </select>
+    <label class="tgl on" id="l-open"><input type="checkbox" id="openonly" checked>Open</label>
+    <label class="tgl" id="l-live"><input type="checkbox" id="liveonly">Live only</label>
+    <label class="tgl" id="l-hot"><input type="checkbox" id="hotonly">Hot ≥ 2</label>
+    <label class="tgl" id="l-free"><input type="checkbox" id="freeonly">Pinnable</label>
+    <button id="sortbtn">Sort · True count</button>
+    <button id="reset">Reset</button>
+    <span class="err" id="err"></span>
+  </div>
+
+  <div class="list">
+    <div class="lhead">
+      <span></span><span>Table</span><span>Dealer</span><span>Limits</span>
+      <span class="r">Run</span><span class="r">True</span><span></span>
+    </div>
+    <div id="cat"></div>
+  </div>
+  <div class="empty" id="empty" hidden>No tables match these filters</div>
+</section>
+
+<footer>Read-only monitor · all-tables occupancy radar (DGA) · 6 counted tables per casino account</footer>
+
+</div><!-- /page -->
+
+<script>
+const $ = (s) => document.querySelector(s);
+
+/* ---------------------------------------------------------------- state --- */
+let catalogue = [], max = 0, perSession = 6, operators = {};
+let live = new Map();
+let dga = new Map();          // id -> DGA occupancy {seated,available,players,onFire,open,dealer}
+let sessions = [];            // one entry per operator account signed in
+const busy = new Set();       // operators with a request in flight
+let catalogueAt = 0;
+let freeBy = {};              // operator -> free slots
+
+const SUIT_RED = new Set(['♥', '♦']);
+const DECKS = 8;              // Pragmatic live blackjack shoe
+const SORTS = [['tc','True count'],['busy','Busy'],['pen','Penetration'],['name','Name']];
+
+/* config §9 — one source of truth for hotThreshold */
+const CFG_KEY = 'bjwall.cfg';
+const cfg = { showBetAdvice: true, hotThreshold: 2, compactSeats: false };
+try { Object.assign(cfg, JSON.parse(localStorage.getItem(CFG_KEY) || '{}')); } catch {}
+function saveCfg(){ try { localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); } catch {} }
+
+/* -------------------------------------------------------- derived values --- */
+// §7. trueCount and decksLeft already arrive computed from src/feed.mjs; the
+// browser only derives what the wire does not carry.
+function heat(tc){
+  const hot = cfg.hotThreshold;
+  if (tc >= hot + 1) return 'h-hot';
+  if (tc >= hot - 0.5) return 'h-warm';
+  if (tc >= 0.5) return 'h-plus';
+  if (tc > -1) return 'h-neutral';
+  return 'h-minus';
+}
+const betUnits = (tc) => Math.min(8, Math.max(1, Math.round(tc - 0.5)));
+// NOTE: `seen` counts cards observed since this socket connected, which only
+// equals cards-out-of-shoe when we joined at a shuffle (fromShoeStart).
+const penetration = (l) => Math.max(0, Math.min(1, (l.seen || 0) / (DECKS * 52)));
+const isHot = (l) => l && (l.trueCount ?? 0) >= cfg.hotThreshold;
+const sgn = (n) => (n > 0 ? '+' : '') + n;
+const tcText = (tc) => (tc > 0 ? '+' : tc < 0 ? '−' : '') + Math.abs(tc).toFixed(1);
+
+/* ------------------------------------------------------------- transport --- */
+async function loadCatalogue(){
+  const c = await (await fetch('/api/catalogue')).json();
+  max = c.max; perSession = c.perSession || 6; operators = c.operators || {};
+  catalogueAt = c.at || 0;
+  catalogue = c.tables.filter((t) => t.game === 'blackjack');
+}
+async function boot(){
+  readPrefs();
+  await loadCatalogue();
+  const st = await (await fetch('/api/status')).json();
+  applyLive(st.live); applyDga(st.dga); sessions = st.sessions || []; max = st.max ?? max;
+  renderAll();
+}
+function applyLive(arr){ live = new Map((arr || []).map((t) => [t.id, t])); }
+function applyDga(obj){ if (obj) dga = new Map(Object.entries(obj)); }
+const occ = (id) => dga.get(id) || null;
+
+const es = new EventSource('/events');
+es.onmessage = (e) => {
+  const d = JSON.parse(e.data);
+  if (d.live) applyLive(d.live);
+  if (d.dga) applyDga(d.dga);
+  if (d.sessions) sessions = d.sessions;
+  if (typeof d.max === 'number') max = d.max;
+  if (d.catalogueAt && d.catalogueAt !== catalogueAt) { loadCatalogue().then(renderAll); return; }
+  renderAll();
+};
+
+/* ------------------------------------------------------------- filtering --- */
+// NB: names are underscore-separated (VIP_BLACKJACK_4), and "_" counts as a word
+// character, so \b never matches at those seams — the separators must be explicit.
+const SEP = '(^|[\\s_])', END = '([\\s_]|$)';
+const KINDS = [
+  ['vip',    'VIP',      new RegExp(SEP + 'VIP' + END, 'i')],
+  ['prive',  'Privé',    /PRIV|LOUNGE/i],
+  ['freebet','Free Bet', /FREE[\s_]?BET/i],
+  ['speed',  'Speed',    /SPEED/i],
+  ['azure',  'Azure',    /AZURE/i],
+  ['one',    'ONE',      new RegExp(SEP + 'ONE' + END, 'i')],
+  ['auto',   'Auto',     /AUTO/i],
+  ['classic','Classic',  null],
+];
+function kindOf(t){
+  const n = (t.name || '') + ' ' + (t.variant || '');
+  for (const [key,, re] of KINDS) if (re && re.test(n)) return key;
+  return 'classic';
+}
+
+let sortMode = 'tc';                      // §6 default: true count descending
+const PREFS = 'bjwall.filters';
+function readPrefs(){
+  let p = {};
+  try { p = JSON.parse(localStorage.getItem(PREFS) || '{}'); } catch {}
+  if (typeof p !== 'object' || !p) p = {};
+  $('#filter').value = p.q || '';
+  $('#op').value = p.op || '';
+  $('#kind').value = p.kind || '';
+  $('#stake').value = p.stake || '';
+  sortMode = SORTS.some(([k]) => k === p.sort) ? p.sort : 'tc';
+  $('#openonly').checked = p.open !== false;
+  $('#liveonly').checked = !!p.liveOnly;
+  $('#hotonly').checked = !!p.hot;
+  $('#freeonly').checked = !!p.free;
+}
+function savePrefs(){
+  try {
+    localStorage.setItem(PREFS, JSON.stringify({
+      q: $('#filter').value, op: $('#op').value, kind: $('#kind').value,
+      stake: $('#stake').value, sort: sortMode,
+      open: $('#openonly').checked, liveOnly: $('#liveonly').checked,
+      hot: $('#hotonly').checked, free: $('#freeonly').checked,
+    }));
+  } catch {}
+}
+
+let optSig = '';
+function syncOptions(){
+  // Rebuilding a <select> closes it mid-interaction and repaints the toolbar, so
+  // only touch these when the catalogue or session set has genuinely changed.
+  const sig = catalogueAt + '|' + catalogue.length + '|' +
+    sessions.map((s) => s.operator + (s.hasSession ? '1' : '0')).join(',');
+  if (sig === optSig) return;
+  optSig = sig;
+
+  const opSel = $('#op'), keep = opSel.value, ops = Object.keys(operators);
+  opSel.innerHTML = '<option value="">All casinos</option>' + ops.map((k) => {
+    const s = sessions.find((x) => x.operator === k);
+    const n = catalogue.filter((t) => (t.operators || []).includes(k)).length;
+    return '<option value="' + k + '">' + ((operators[k] || {}).label || k) +
+      ' (' + n + ')' + (s && s.hasSession ? '' : ' — no session') + '</option>';
+  }).join('');
+  opSel.value = ops.includes(keep) ? keep : '';
+
+  const kSel = $('#kind'), kKeep = kSel.value;
+  const present = new Set(catalogue.map(kindOf));
+  kSel.innerHTML = '<option value="">All types</option>' + KINDS
+    .filter(([key]) => present.has(key))
+    .map(([key, label]) => '<option value="' + key + '">' + label +
+      ' (' + catalogue.filter((t) => kindOf(t) === key).length + ')</option>').join('');
+  kSel.value = present.has(kKeep) ? kKeep : '';
+}
+
+function visible(){
+  const q = $('#filter').value.trim().toLowerCase();
+  const op = $('#op').value, kind = $('#kind').value;
+  const stake = parseFloat($('#stake').value);
+  const openOnly = $('#openonly').checked, liveOnly = $('#liveonly').checked;
+  const hotOnly = $('#hotonly').checked, freeOnly = $('#freeonly').checked;
+
+  const rows = catalogue.filter((t) => {
+    const l = live.get(t.id);
+    if (openOnly && !t.open) return false;
+    if (liveOnly && !l) return false;
+    if (hotOnly && !isHot(l)) return false;
+    if (op && !(t.operators || []).includes(op)) return false;
+    if (kind && kindOf(t) !== kind) return false;
+    if (!isNaN(stake) && !(t.min <= stake)) return false;
+    if (freeOnly && !l && !(t.operators || []).some((o) => freeBy[o] > 0)) return false;
+    if (q) {
+      const cas = (t.operators || []).map((k) => (operators[k] || {}).label || k).join(' ');
+      const hay = (t.name + ' ' + t.id + ' ' + ((l && l.dealer) || t.dealer || '') + ' ' + cas).toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  const tc = (t) => { const l = live.get(t.id); return l ? (l.trueCount ?? 0) : -Infinity; };
+  const pen = (t) => { const l = live.get(t.id); return l ? penetration(l) : -1; };
+  // "busy" ranks by the DGA radar: seated players first, on-fire seats as a tiebreak -
+  // the same signal auto-fill uses, so the manual list matches what the button would pick
+  const busyScore = (t) => { const o = occ(t.id); return o ? (o.seated || 0) * 10 + (o.onFire || 0) * 3 : -1; };
+  const cmp =
+    sortMode === 'name' ? (a, b) => a.name.localeCompare(b.name) :
+    sortMode === 'pen'  ? (a, b) => pen(b) - pen(a) || a.name.localeCompare(b.name) :
+    sortMode === 'busy' ? (a, b) => busyScore(b) - busyScore(a) || a.name.localeCompare(b.name) :
+                          (a, b) => tc(b) - tc(a) || a.name.localeCompare(b.name);
+  // name order never moves on its own, so it needs no settle interval
+  return sortMode === 'name' ? rows.sort(cmp) : ranked('cat', rows, cmp);
+}
+// a deliberate change by the user should re-rank at once, not on the next settle
+function invalidateRank(){ for (const k of Object.keys(RANK)) RANK[k].at = 0; }
+
+/* --------------------------------------------------------------- actions --- */
+function showErr(m){ $('#err').textContent = m || ''; }
+
+async function toggle(id, on){
+  showErr('');
+  const r = await fetch('/api/live/toggle', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, on }),
+  });
+  if (!r.ok) showErr((await r.json()).error || 'failed');
+}
+window.toggle = toggle;
+
+async function setTokenFor(op){
+  const label = (operators[op] && operators[op].label) || op;
+  const raw = prompt(
+    'Sign in to ' + label + ', open any Pragmatic blackjack table, and paste its\n' +
+    'game-socket URL (or just the JSESSIONID):\n\n' +
+    '  wss://gs15.pragmaticplaylive.net/game?JSESSIONID=…&tableId=…');
+  if (!raw) return;
+  let tok = raw.trim();
+  const m = /[?&]JSESSIONID=([^&\s]+)/i.exec(tok);
+  if (m) tok = decodeURIComponent(m[1]);
+  showErr(''); busy.add(op); renderSessions();
+  try {
+    const r = await fetch('/api/session/set', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ operator: op, jsessionid: tok }),
+    });
+    const j = await r.json();
+    if (!r.ok) showErr(label + ': ' + (j.error || 'invalid token'));
+    if (j.sessions) sessions = j.sessions;
+    if (typeof j.max === 'number') max = j.max;
+  } finally { busy.delete(op); renderAll(); }
+}
+window.setTokenFor = setTokenFor;
+
+async function mintFor(op){
+  busy.add(op); renderSessions();
+  try {
+    const r = await fetch('/api/session/refresh', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ operator: op }),
+    });
+    const j = await r.json();
+    if (!r.ok) showErr(j.error || 'could not mint a session');
+    if (j.sessions) sessions = j.sessions;
+    if (typeof j.max === 'number') max = j.max;
+  } finally { busy.delete(op); renderAll(); }
+}
+window.mintFor = mintFor;
+
+async function setGameUrlFor(op, ev){
+  if (ev) ev.stopPropagation();
+  const cfgOp = operators[op] || {};
+  const label = cfgOp.label || op;
+  const url = prompt(
+    'Auto-refresh for ' + label + '\n\n' +
+    'Sign in once with:   npm run login -- ' + op + '\n' +
+    'Then open any Pragmatic blackjack table there and paste its PAGE url\n' +
+    '(the address bar, not the websocket):', cfgOp.gameUrl || cfgOp.origin || '');
+  if (!url) return false;
+  const r = await fetch('/api/session/config', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ operator: op, gameUrl: url.trim() }),
+  });
+  const j = await r.json();
+  if (!r.ok) { showErr(label + ': ' + (j.error || 'bad URL')); return false; }
+  if (j.operators) operators = j.operators;
+  if (j.sessions) sessions = j.sessions;
+  renderAll();
+  return true;
+}
+window.setGameUrlFor = setGameUrlFor;
+
+async function addSessionFor(op){
+  const c = operators[op] || {};
+  if (c.mint === 'gamePage' && !c.gameUrl) { if (!(await setGameUrlFor(op))) return; }
+  await mintFor(op);
+}
+window.addSessionFor = addSessionFor;
+
+async function removeSession(op, ev){
+  ev.stopPropagation();
+  const label = (operators[op] && operators[op].label) || op;
+  if (!confirm('Drop the ' + label + ' session and unpin its tables?')) return;
+  const r = await fetch('/api/session/remove', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ operator: op }),
+  });
+  const j = await r.json();
+  if (j.sessions) sessions = j.sessions;
+  if (typeof j.max === 'number') max = j.max;
+  renderAll();
+}
+window.removeSession = removeSession;
+
+/* ---------------------------------------------------------------- events --- */
+for (const id of ['#filter','#op','#kind','#stake','#openonly','#liveonly','#hotonly','#freeonly']) {
+  $(id).addEventListener(id === '#filter' ? 'input' : 'change',
+    () => { savePrefs(); invalidateRank(); renderCat(); });
+}
+$('#sortbtn').addEventListener('click', () => {
+  const i = SORTS.findIndex(([k]) => k === sortMode);
+  sortMode = SORTS[(i + 1) % SORTS.length][0];
+  savePrefs(); invalidateRank(); renderCat();
+});
+$('#reset').addEventListener('click', () => {
+  $('#filter').value = ''; $('#op').value = ''; $('#kind').value = ''; $('#stake').value = '';
+  sortMode = 'tc'; $('#openonly').checked = true;
+  $('#liveonly').checked = $('#hotonly').checked = $('#freeonly').checked = false;
+  savePrefs(); invalidateRank(); renderCat();
+});
+document.addEventListener('keydown', (e) => {
+  const typing = /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName);
+  if (e.key === '/' && !typing) { e.preventDefault(); $('#filter').focus(); $('#filter').select(); }
+  else if (e.key === 'Escape' && document.activeElement === $('#filter')) {
+    $('#filter').value = ''; savePrefs(); renderCat();
+  }
+});
+$('#clear').addEventListener('click', () => fetch('/api/live/clear', { method: 'POST' }));
+$('#autofill').addEventListener('click', async () => {
+  if (!sessions.some((s) => s.hasSession)) return showErr('add an operator session first');
+  const btn = $('#autofill'); btn.disabled = true;
+  showErr('');
+  try {
+    const r = await fetch('/api/live/auto', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    });
+    const j = await r.json();
+    if (!r.ok) showErr((j.error || 'auto-fill failed') + needLoginNote(j.needLogin));
+    else if (!j.pinned || !j.pinned.length) showErr('no free slots or no open tables to pin' + needLoginNote(j.needLogin));
+    else if (j.needLogin && j.needLogin.length) showErr(needLoginNote(j.needLogin).replace(/^ — /, ''));
+  } finally { btn.disabled = false; }
+});
+// name the accounts that could not be auto-revived, so the user knows to paste a token
+function needLoginNote(ops){
+  if (!ops || !ops.length) return '';
+  const labels = ops.map((o) => (operators[o] || {}).label || o).join(', ');
+  return ' — sign in needed for ' + labels + ' (click its pill to paste a token)';
+}
+$('#addsess').addEventListener('click', () => {
+  const have = new Set(sessions.filter((s) => s.hasSession).map((s) => s.operator));
+  const free = Object.keys(operators).filter((k) => !have.has(k));
+  if (!free.length) return showErr('every known casino already has a session');
+  const list = free.map((k, i) => '  ' + (i + 1) + ') ' + operators[k].label).join('\n');
+  const pick = prompt('Which casino account?\n' + list + '\n\nEnter a number:');
+  if (!pick) return;
+  const op = free[parseInt(pick, 10) - 1];
+  if (!op) return showErr('no such casino');
+  addSessionFor(op);
+});
+// hotThreshold §9: 0.5–5, step 0.5 — drives heat, filter and header counter
+function bumpHot(d){
+  cfg.hotThreshold = Math.min(5, Math.max(0.5, Math.round((cfg.hotThreshold + d) * 2) / 2));
+  saveCfg(); renderAll();
+}
+$('#hotup').addEventListener('click', () => bumpHot(0.5));
+$('#hotdn').addEventListener('click', () => bumpHot(-0.5));
+$('#cfgadvice').addEventListener('click', () => { cfg.showBetAdvice = !cfg.showBetAdvice; saveCfg(); renderAll(); });
+$('#cfgcompact').addEventListener('click', () => { cfg.compactSeats = !cfg.compactSeats; saveCfg(); renderAll(); });
+
+/* --------------------------------------------------- DOM patching helpers ---
+   Table state arrives several times a second. Re-writing innerHTML on every tick
+   repainted the whole page (and restarted the .tbl entry animation), which read as
+   a constant flicker. So rows are keyed and patched in place: an element survives
+   across updates, and only the markup that actually changed is written.          */
+function patch(container, items){
+  const existing = new Map();
+  for (const el of container.children) existing.set(el.dataset.key, el);
+  let prev = null;
+  for (const it of items) {
+    let el = existing.get(it.key);
+    if (el) {
+      existing.delete(it.key);
+      if (el.__html !== it.html) { el.innerHTML = it.html; el.__html = it.html; }
+      if (el.className !== it.cls) el.className = it.cls;
+    } else {
+      el = document.createElement('div');
+      el.dataset.key = it.key;
+      el.className = it.cls;
+      el.innerHTML = it.html;
+      el.__html = it.html;          // only new elements run the entry animation
+    }
+    const want = prev ? prev.nextSibling : container.firstChild;
+    if (want !== el) container.insertBefore(el, want);
+    prev = el;
+  }
+  for (const el of existing.values()) el.remove();
+}
+
+/* Re-rank at most every ORDER_MS. True-count order (§1.3) is the right ranking,
+   but re-sorting on every tick makes rows swap under the cursor — precisely the
+   layout-shifting §8 forbids. Values update continuously; positions settle.
+   A changed key set re-ranks immediately so pins/unpins appear at once.          */
+const ORDER_MS = 5000;
+const RANK = {};
+function ranked(name, rows, cmp){
+  const c = RANK[name] || (RANK[name] = { at: 0, order: [] });
+  const ids = new Set(rows.map((r) => r.id));
+  const changed = ids.size !== c.order.length || c.order.some((id) => !ids.has(id));
+  if (changed || Date.now() - c.at >= ORDER_MS) {
+    const sorted = rows.slice().sort(cmp);
+    c.order = sorted.map((r) => r.id);
+    c.at = Date.now();
+    return sorted;
+  }
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  return c.order.map((id) => byId.get(id)).filter(Boolean);
+}
+
+/* ------------------------------------------------------------- rendering --- */
+const DEC = { HIT:'Hit', STAND:'Stand', SPLIT:'Split', DOUBLEDOWN:'Double', CASHOUT:'Cash out' };
+const decLabel = (d) => (d && d !== 'None' ? (DEC[d] || d) : '');
+
+function pcChip(str){
+  if (str === '🂠' || !str) return '<span class="pc back">■</span>';
+  const suit = str.slice(-1), rank = str.slice(0, -1);
+  return '<span class="pc' + (SUIT_RED.has(suit) ? ' red' : '') + '">' +
+    '<span>' + rank + '</span><span>' + suit + '</span></span>';
+}
+function handHtml(cards, hole){
+  const c = (cards || []).map(pcChip);
+  if (hole) c.push(pcChip('🂠'));
+  return c.join('');
+}
+// §5.3 total colours: 21 -> hot, bust -> minus, otherwise --ink-2
+function totalClass(s){
+  if (s.bust || /bust/i.test(s.result || '')) return 'minus';
+  return parseInt(s.score, 10) === 21 ? 'hot' : '';
+}
+function ageStr(ms){
+  const s = Math.round((Date.now() - ms) / 1000);
+  return s < 2 ? 'now' : s < 60 ? s + 's' : Math.floor(s / 60) + 'm';
+}
+function phaseTag(p){
+  if (p === 'betsopen' || p === 'betting') return ['betting','Betting'];
+  if (p === 'betsclosed' || p === 'betsclosingsoon') return ['dealing','Bets closed'];
+  if (p === 'dealing' || p === 'startDealing') return ['dealing','Dealing'];
+  if (p === 'ended') return ['betting','Round end'];
+  return ['','Idle'];
+}
+
+function seatRow(label, s, isDealer){
+  // The wire keeps hiddenCardDealt true for the whole round, so it cannot by itself
+  // say whether the hole card is still down. The dealer only ever shows one card
+  // while it is: once the hole is turned, every card is listed. Presentation-only
+  // reading — the flag on the feed is left untouched.
+  const cards = (s && s.cards) || [];
+  const holeDown = !!(s && s.hole) && cards.length < 2;
+  // dealer shows sum/– while the hole card is face down §5.3
+  const total = s ? (isDealer && holeDown ? (s.score ?? '') + '/–' : (s.score ?? '')) : '';
+  const pills = cfg.compactSeats ? '' : handHtml(cards, holeDown);
+  const bet = (!isDealer && s && s.bet) ? '<span class="sbet">€' + s.bet + '</span>' : '';
+  const dec = (!isDealer && s && !s.result && decLabel(s.decision))
+    ? '<span class="sdec">' + decLabel(s.decision) + '</span>' : '';
+  return '<div class="srow' + (isDealer ? ' dealer' : '') + '">' +
+    '<span class="slab">' + label + '</span>' +
+    '<span class="pills">' + bet + pills + dec + '</span>' +
+    '<span class="stot ' + (s ? totalClass(s) : '') + '">' + total + '</span></div>';
+}
+
+function boardCard(t){
+  const l = live.get(t.id);
+  const all = l.seats || {};
+  const dealer = all.dealer;
+  const players = Object.entries(all)
+    .filter(([k]) => k !== 'dealer')
+    .sort(([a],[b]) => a.localeCompare(b, undefined, { numeric: true }));
+
+  const tc = l.trueCount ?? 0;
+  const h = heat(tc);
+  const [tagCls, tagTxt] = phaseTag(l.phase);
+  const bad = /refused|error|dead|reconnect/.test(l.status || '');
+  const cas = (operators[l.operator] || {}).label || l.operator || '';
+  const prov = !l.fromShoeStart;
+
+  // seat area — fixed footprint whether or not a hand is out §1.4 / §5.3
+  const hasHand = !!dealer || players.length > 0;
+  const felt = hasHand
+    ? seatRow('Dealer', dealer, true) +
+      players.map(([k, s]) => seatRow('Seat ' + k.split('/')[0] + (k.includes('/') ? '·s' : ''), s, false)).join('')
+    : '<div class="shuffle"><span class="ring"></span><span>Shuffle / next round</span></div>';
+
+  // bet advice §5.2
+  const units = betUnits(tc);
+  const rec = tc >= 0.5 ? units + '× unit' : 'Min / sit out';
+  const barPct = Math.max(0, Math.min(100, ((tc + 2) / 8) * 100));
+  const advice = cfg.showBetAdvice ? '<div class="advice' + (tc >= 3 ? ' hot' : '') + '">' +
+    '<span class="lab">Bet</span>' +
+    '<span class="rec ' + h + '">' + rec + '</span>' +
+    '<span class="bar"><i class="' + h + '" style="width:' + barPct.toFixed(1) +
+      '%;background:currentColor"></i></span></div>' : '';
+
+  const pen = penetration(l);
+
+  return { key: t.id, cls: 'tbl', html:
+    '<div class="thead">' +
+      '<span style="min-width:0">' +
+        '<span class="tname">' + t.name + '</span>' +
+        '<span class="tags">' +
+          (cas ? '<span class="tag">' + cas + '</span>' : '') +
+          '<span class="tag ' + (bad ? '' : tagCls) + (tagCls && !bad ? ' live' : '') + '">' +
+            (bad ? l.status : tagTxt) + '</span>' +
+        '</span>' +
+      '</span>' +
+      '<span class="counts">' +
+        '<span class="cnum"><span class="rc">' + sgn(l.rc || 0) + '</span>' +
+          '<span class="lab">Run</span></span>' +
+        '<span class="cnum tcol"><span class="tc ' + h + '">' + tcText(tc) + '</span>' +
+          '<span class="lab">' + (prov ? 'True ~' : 'True') + '</span></span>' +
+      '</span>' +
+    '</div>' +
+    advice +
+    '<div class="felt">' + felt + '</div>' +
+    '<div class="tfoot">' +
+      '<div class="penrow"><span class="penbar"><i style="width:' + (pen * 100).toFixed(1) + '%"></i></span>' +
+        '<span class="penlab">' + (l.decksLeft ?? '?') + 'd left</span></div>' +
+      '<div class="fmeta">' +
+        '<span class="dl">' + (l.dealer || t.dealer || '—') + '</span>' +
+        '<span class="sep">·</span><span>' + (l.taken || []).length + '/7</span>' +
+        (l.shoe ? '<span class="sep">·</span><span>' + l.shoe + '</span>' : '') +
+        '<span class="sep">·</span><span>' + ageStr(l.updatedAt) + '</span>' +
+        '<button onclick="toggle(\'' + t.id + '\',false)">Unpin</button>' +
+      '</div>' +
+    '</div>' };
+}
+
+function listRow(t){
+  const l = live.get(t.id);
+  const o = occ(t.id);
+  const on = !!l;
+  const offers = t.operators || [];
+  const room = offers.some((o) => freeBy[o] > 0);
+  const closed = !t.open;
+  const canPin = t.open && offers.length > 0 && (on || room);
+  const tc = on ? (l.trueCount ?? 0) : null;
+  const cas = offers.map((k) => (operators[k] || {}).label || k).join(' · ');
+  const dot = closed ? 'closed' : isHot(l) ? 'hot' : '';
+  const why = closed ? '' : offers.length === 0 ? 'None' : room ? 'Pin' : 'Full';
+  // live occupancy from the DGA radar: seated/7 and the provider's on-fire seat count
+  const occTxt = o && o.seated != null
+    ? ' · ' + o.seated + '/7' + (o.onFire ? ' 🔥' + o.onFire : '')
+    : '';
+
+  return { key: t.id, cls: 'lrow' + (closed ? ' closed' : ''), html:
+    '<span class="dot ' + dot + '"></span>' +
+    '<span class="lname"><b>' + t.name + '</b><span class="lcas">' + (cas || '—') + occTxt + '</span></span>' +
+    '<span class="ldeal">' + ((l && l.dealer) || (o && o.dealer) || t.dealer || '—') + '</span>' +
+    '<span class="llim">' + t.min + '–' + t.max + '</span>' +
+    '<span class="lrc r">' + (on ? sgn(l.rc || 0) : '—') + '</span>' +
+    '<span class="r">' +
+      '<span class="ltc ' + (on ? heat(tc) : '') + '">' + (on ? tcText(tc) : '—') + '</span>' +
+      '<span class="lpen"><i style="width:' + (on ? (penetration(l) * 100).toFixed(1) : 0) + '%"></i></span>' +
+    '</span>' +
+    (closed ? '<span></span>'
+      : '<button class="' + (on ? 'on' : '') + '" ' + (canPin ? '' : 'disabled') +
+        ' onclick="toggle(\'' + t.id + '\',' + !on + ')">' + (on ? 'Live' : why) + '</button>') };
+}
+
+function computeFree(){
+  freeBy = {};
+  for (const s of sessions) freeBy[s.operator] = Math.max(0, (s.slots || 0) - (s.live || 0));
+}
+
+function sessPill(s){
+  const label = s.label || s.operator;
+  const pending = busy.has(s.operator) || s.refreshing;
+  const cls = pending ? 'busy' : s.error ? 'bad' : s.hasSession ? 'ok' : '';
+  const cap = s.hasSession
+    ? '<span class="cap' + (s.live >= s.slots ? ' full' : '') + '">' + s.live + '/' + s.slots + '</span>' : '';
+  const retry = s.retryInSeconds ? ' · retry ' + Math.ceil(s.retryInSeconds / 60) + 'm' : '';
+  const note = pending ? '<span class="note">working…</span>'
+    : s.error ? '<span class="note">' + s.error.slice(0, 30) + retry + '</span>'
+    : s.hasSession ? '' : '<span class="note">no token' + retry + '</span>';
+  const title = (s.canMint ? label + ' — auto-refreshing; click to paste a token by hand'
+                           : label + ' — no auto-refresh yet; ⚙ sets its game page') +
+    '\nEach account carries its own ' + s.slots + ' tables.';
+  return '<span class="sess ' + cls + '" title="' + title + '" onclick="setTokenFor(\'' + s.operator + '\')">' +
+    '<span class="d"></span><b>' + label + '</b>' + cap + note +
+    (s.canMint
+      ? '<button class="x" title="re-mint now" onclick="event.stopPropagation();mintFor(\'' + s.operator + '\')">↻</button>'
+      : '<button class="x" title="set the game page" onclick="setGameUrlFor(\'' + s.operator + '\',event)">⚙</button>') +
+    '<button class="x" title="drop this session" onclick="removeSession(\'' + s.operator + '\',event)">×</button></span>';
+}
+
+// only rewritten when the pills actually differ, so an open dropdown or a hover
+// is never destroyed by a routine table update
+let sessSig = '';
+function renderSessions(){
+  const html = sessions.length
+    ? sessions.map(sessPill).join('')
+    : '<span class="sess" onclick="document.getElementById(\'addsess\').click()">' +
+      '<span class="d"></span><b>No sessions</b><span class="note">add one</span></span>';
+  if (html === sessSig) return;
+  sessSig = html;
+  $('#sessions').innerHTML = html;
+}
+
+function renderBoard(){
+  const ids = [...live.keys()];
+  $('#livesec').hidden = ids.length === 0;
+  // §1.3 rank by opportunity: hottest shoe first, re-ranked on a settle interval
+  const rows = ranked('board',
+    ids.map((id) => catalogue.find((t) => t.id === id) || { id, name: id, dealer: '' }),
+    (a, b) => ((live.get(b.id) || {}).trueCount ?? 0) - ((live.get(a.id) || {}).trueCount ?? 0));
+  patch($('#board'), rows.map(boardCard));
+  const hot = rows.filter((t) => isHot(live.get(t.id))).length;
+  $('#boardmeta').textContent = rows.length + ' pinned · ' + hot + ' hot';
+}
+
+function renderCat(){
+  computeFree();
+  const rows = visible();
+  $('#empty').hidden = rows.length > 0;
+  patch($('#cat'), rows.map(listRow));
+  $('#l-open').classList.toggle('on', $('#openonly').checked);
+  $('#l-live').classList.toggle('on', $('#liveonly').checked);
+  $('#l-hot').classList.toggle('on', $('#hotonly').checked);
+  $('#l-free').classList.toggle('on', $('#freeonly').checked);
+  $('#l-hot').lastChild.textContent = 'Hot ≥ ' + cfg.hotThreshold;
+  $('#sortbtn').textContent = 'Sort · ' + (SORTS.find(([k]) => k === sortMode) || SORTS[0])[1];
+  $('#count').textContent = rows.length + ' of ' + catalogue.length + ' tables';
+  renderHead();
+}
+
+function renderHead(){
+  $('#tally').textContent = catalogue.length + ' tables · ' +
+    catalogue.filter((t) => t.open).length + ' open';
+  $('#liven').textContent = live.size;
+  $('#livemax').textContent = max;
+  $('#hotn').textContent = [...live.values()].filter(isHot).length;
+  $('#hotval').textContent = 'Hot ≥ ' + cfg.hotThreshold;
+  $('#cfgadvice').classList.toggle('brand', cfg.showBetAdvice);
+  $('#cfgcompact').classList.toggle('brand', cfg.compactSeats);
+  // mirror the essentials into the nav rail
+  const nSess = sessions.filter((s) => s.hasSession).length;
+  $('#railbj').textContent = live.size + '/' + max;
+  $('#railstat').innerHTML = '<span class="dot' + (nSess ? ' live' : '') + '"></span>' +
+    nSess + ' session' + (nSess === 1 ? '' : 's') + ' · ' + live.size + ' counting';
+}
+
+function renderAll(){ computeFree(); syncOptions(); renderBoard(); renderCat(); renderSessions(); renderHead(); }
+
+setInterval(() => { if (live.size) renderBoard(); }, 4000);
+boot();
+</script>
+</body>
+</html>

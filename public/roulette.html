@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roulette Wall</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600&family=Barlow:wght@400;500&family=JetBrains+Mono:wght@500;700&display=swap">
+<link rel="stylesheet" href="/shell.css">
+<style>
+:root{
+  --bg:#16181D; --bg-wash:#1F2530; --surface:#1E212A; --surface-sunk:#1A1D24;
+  --surface-raised:#23272F; --border:#30353F; --border-hover:#424854; --divider:#282D35;
+  --row-hover:#24282F; --track:#2C313A;
+  --ink:#EEF0F5; --ink-title:#F6F8FB; --ink-2:#D5D9E2; --ink-3:#C3C8D3;
+  --ink-muted:#9FA6B3; --ink-dim:#979FAC; --ink-faint:#9BA2AF; --ink-fainter:#949CA8;
+  --ink-disabled:#5B616C;
+  --brand:#3C5A8A; --brand-surface:#223C5C; --brand-ink:#A9C8F0; --btn-border:#373D47;
+  --dot-closed:#3A404A;
+  /* roulette result colours */
+  --roul-red:#C64740; --roul-red-ink:#FFDAD6;
+  --roul-black:#31363F; --roul-black-ink:#D5D9E2;
+  --roul-green:#2E8B63; --roul-green-ink:#CFF3E1;
+  --hot:#4FD98A; --dealer-label:#E0B15A;
+  --f-cond:'Barlow Condensed','Arial Narrow',sans-serif;
+  --f-body:'Barlow',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --f-mono:'JetBrains Mono','SFMono-Regular',Consolas,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:radial-gradient(1200px 600px at 20% -10%,var(--bg-wash) 0%,var(--bg) 60%);
+  background-attachment:fixed;min-height:100vh;color:var(--ink);
+  font:400 13px/1.5 var(--f-body);-webkit-font-smoothing:antialiased}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+
+header{position:sticky;top:0;z-index:20;backdrop-filter:blur(12px);
+  background:color-mix(in srgb,var(--bg) 92%,transparent);
+  border-bottom:1px solid var(--border);padding:12px 24px;display:flex;gap:14px;
+  align-items:center;flex-wrap:wrap}
+.logo{width:24px;height:32px;border-radius:5px;background:var(--brand-surface);
+  border:1px solid var(--brand);display:grid;place-items:center;flex:none;
+  font-family:var(--f-mono);font-weight:700;font-size:13px;color:var(--brand-ink)}
+h1{margin:0;font-family:var(--f-cond);font-weight:600;font-size:19px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-title);white-space:nowrap}
+.tally{font-family:var(--f-mono);font-weight:500;font-size:10px;letter-spacing:.1em;
+  color:var(--ink-fainter);white-space:nowrap}
+.spacer{flex:1 1 auto}
+.nav{display:flex;gap:0;border:1px solid var(--border);border-radius:6px;overflow:hidden}
+.nav a{font:500 11px/1 var(--f-mono);letter-spacing:.1em;text-transform:uppercase;
+  padding:8px 12px;color:var(--ink-dim);text-decoration:none;background:var(--surface-raised)}
+.nav a.on{background:var(--brand-surface);color:var(--brand-ink)}
+.nav a:hover:not(.on){color:var(--ink)}
+.stat{display:flex;align-items:baseline;gap:6px;white-space:nowrap}
+.stat .v{font-family:var(--f-mono);font-weight:700;font-size:15px;color:var(--ink)}
+.stat .l{font-family:var(--f-mono);font-weight:500;font-size:9px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-fainter)}
+select,input[type=search]{font:400 12px var(--f-body);padding:8px 10px;border-radius:6px;
+  border:1px solid var(--border);background:var(--surface-raised);color:var(--ink-2);transition:border-color .15s}
+input[type=search]{min-width:150px}
+select:focus,input[type=search]:focus{outline:none;border-color:var(--brand)}
+button{font:500 11px/1 var(--f-mono);letter-spacing:.1em;text-transform:uppercase;cursor:pointer;
+  border-radius:6px;border:1px solid var(--btn-border);background:var(--surface-raised);
+  color:var(--ink-dim);padding:8px 11px;transition:border-color .15s}
+button:hover{border-color:var(--border-hover);color:var(--ink)}
+.live-dot{width:7px;height:7px;border-radius:50%;background:var(--hot);flex:none;
+  animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* per-provider feed health */
+.feeds{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.feed{display:flex;align-items:center;gap:6px;padding:5px 9px;border-radius:6px;
+  border:1px solid var(--border);background:var(--surface-raised);white-space:nowrap;cursor:help}
+.feed .d{width:7px;height:7px;border-radius:50%;background:var(--dot-closed);flex:none}
+.feed.live .d{background:var(--hot);animation:pulse 2.4s ease-in-out infinite}
+.feed.warn .d{background:var(--dealer-label)}
+.feed.bad .d{background:var(--roul-red)}
+.feed b{font-family:var(--f-cond);font-weight:600;font-size:12px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--ink-2)}
+.feed .n{font-family:var(--f-mono);font-weight:700;font-size:10px;color:var(--ink-faint)}
+.feed.bad b{color:var(--roul-red)}
+
+section{padding:20px 24px 4px}
+.shead{display:flex;align-items:center;gap:12px;margin:0 0 12px}
+.shead h2{margin:0;font-family:var(--f-cond);font-weight:600;font-size:12px;letter-spacing:.28em;
+  text-transform:uppercase;color:var(--brand-ink)}
+.shead .rule{flex:1 1 auto;height:1px;background:linear-gradient(90deg,var(--border),transparent)}
+.shead .meta{font-family:var(--f-mono);font-weight:500;font-size:9px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-fainter)}
+.toolbar{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+
+.board{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(340px,1fr))}
+@keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.tbl{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;
+  display:flex;flex-direction:column;animation:rise .4s ease both;transition:border-color .15s}
+.tbl:hover{border-color:var(--border-hover)}
+.tbl.closed{opacity:.55}
+/* manage mode: a switched-off table stays on screen, dimmed, so it can be re-enabled */
+.tbl.off{opacity:.42;border-style:dashed}
+.foot .pick{margin-left:8px;padding:4px 9px;font-size:9px}
+.foot .pick.on{border-color:var(--brand);background:var(--brand-surface);color:var(--brand-ink)}
+button.on{border-color:var(--brand);background:var(--brand-surface);color:var(--brand-ink)}
+
+.thead{display:flex;align-items:flex-start;gap:8px;padding:11px 13px 8px}
+.tname{font-family:var(--f-cond);font-weight:600;font-size:17px;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--ink-title);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;min-width:0;line-height:1.15}
+.tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
+.tag{font-family:var(--f-mono);font-weight:500;font-size:8px;letter-spacing:.14em;text-transform:uppercase;
+  padding:2px 5px;border-radius:3px;background:var(--surface-raised);color:var(--ink-dim);white-space:nowrap}
+.tag.muted{background:transparent;border:1px solid var(--border);color:var(--ink-fainter);cursor:help}
+.tag.pt{background:var(--brand-surface);color:var(--brand-ink)}
+
+/* latest number, large */
+.latest{margin-left:auto;flex:none;display:flex;flex-direction:column;align-items:center;gap:3px}
+.big{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;
+  font-family:var(--f-mono);font-weight:700;font-size:24px;border:2px solid transparent}
+.big.red{background:var(--roul-red);color:var(--roul-red-ink)}
+.big.black{background:var(--roul-black);color:var(--roul-black-ink);border-color:var(--border-hover)}
+.big.green{background:var(--roul-green);color:var(--roul-green-ink)}
+.latest .ago{font-family:var(--f-mono);font-weight:500;font-size:8px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-faint)}
+
+/* recent strip */
+.strip{display:flex;gap:4px;flex-wrap:wrap;padding:4px 13px 10px}
+.chip{min-width:22px;height:22px;padding:0 5px;border-radius:11px;display:inline-flex;
+  align-items:center;justify-content:center;font-family:var(--f-mono);font-weight:700;font-size:11px}
+.chip.red{background:var(--roul-red);color:var(--roul-red-ink)}
+.chip.black{background:var(--roul-black);color:var(--roul-black-ink)}
+.chip.green{background:var(--roul-green);color:var(--roul-green-ink)}
+.chip.faded{opacity:.5}
+
+.foot{padding:8px 13px;border-top:1px solid var(--divider);display:flex;align-items:center;gap:10px;
+  font-family:var(--f-mono);font-weight:500;font-size:9px;letter-spacing:.06em;color:var(--ink-fainter);flex-wrap:wrap}
+.foot .dl{color:var(--ink-3)}
+.foot .sep{color:var(--border-hover)}
+.foot .rbg{display:flex;gap:6px;margin-left:auto}
+.foot .rbg b{font-weight:700}
+.foot .rbg .r{color:var(--roul-red)} .foot .rbg .b{color:var(--ink-2)} .foot .rbg .g{color:var(--roul-green)}
+
+.empty{font-family:var(--f-mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-fainter);text-align:center;padding:40px 0}
+footer{padding:22px 24px 30px;font-family:var(--f-mono);font-size:9px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink-fainter)}
+@media (prefers-reduced-motion:reduce){.tbl,.live-dot{animation:none}*{transition:none!important}}
+</style>
+</head>
+<body class="app">
+
+<div class="rail">
+  <div class="brand">
+    <span class="mark">A♠</span>
+    <span class="txt">Casino Wall<small>read-only monitor</small></span>
+  </div>
+  <nav>
+    <a class="item" href="/"><span class="ico">▦</span>Blackjack</a>
+    <a class="item on" href="/roulette"><span class="ico">◉</span>Roulette<span class="badge" id="railrou"></span></a>
+    <a class="item" href="/patterns"><span class="ico">◈</span>Patterns</a>
+    <a class="item" href="/settings"><span class="ico">⚙</span>Settings</a>
+  </nav>
+  <div class="foot">
+    <span id="railstat"><span class="dot"></span>connecting…</span>
+  </div>
+</div>
+
+<div class="page">
+
+<header>
+  <span class="logo">◉</span>
+  <h1>Roulette Wall</h1>
+  <span class="tally" id="tally">—</span>
+  <span class="spacer"></span>
+  <span class="feeds" id="feeds"></span>
+  <span class="stat"><span class="v" id="ntables">0</span><span class="l">tables</span></span>
+  <select id="op" title="casino"><option value="">All casinos</option></select>
+  <select id="prov" title="game provider">
+    <option value="">All providers</option>
+    <option value="pragmatic">Pragmatic</option>
+    <option value="playtech">Playtech</option>
+  </select>
+  <input id="filter" type="search" placeholder="Search table or dealer… ( / )">
+  <select id="sort" title="sort order">
+    <option value="recent">Sort · Most recent</option>
+    <option value="name">Sort · Name</option>
+    <option value="busy">Sort · Busiest</option>
+  </select>
+  <button id="manage" title="choose which tables appear on the wall">Choose tables</button>
+</header>
+
+<section>
+  <div class="shead"><h2>Live results</h2><span class="rule"></span>
+    <span class="meta" id="meta"></span></div>
+  <div class="board" id="board"></div>
+  <div class="empty" id="empty" hidden>No roulette tables yet — the radar is still loading</div>
+</section>
+
+<footer>Read-only · roulette results via the Pragmatic DGA lobby feed · no session required</footer>
+
+</div><!-- /page -->
+
+<script>
+const $ = (s) => document.querySelector(s);
+let tables = [];          // from /api/roulette
+let operatorsMap = {};
+let providers = {};       // per-provider feed health, shown in the header
+let defaultedOp = false;
+
+/* filters persisted per browser */
+const PREFS = 'roulwall.filters';
+const HIDDEN = 'roulwall.hidden';
+// Tables the user has switched off. Stored as the hidden set rather than the shown one
+// so a table that appears later (a new wheel, or Playtech coming up) shows by default.
+let hidden = new Set();
+try { hidden = new Set(JSON.parse(localStorage.getItem(HIDDEN) || '[]')); } catch {}
+let manage = false;   // in manage mode hidden tables stay visible so they can be re-enabled
+
+// Display rules set on /settings, re-read on every poll so a change there shows here
+// without a reload.
+const RULES = 'roulwall.rules';
+let rules = { hideClosed: false, hideNoResults: false, minSpins: 0, hideDupes: false };
+function readRules(){
+  try { Object.assign(rules, JSON.parse(localStorage.getItem(RULES) || '{}')); } catch {}
+  try { hidden = new Set(JSON.parse(localStorage.getItem(HIDDEN) || '[]')); } catch {}
+}
+
+function readPrefs(){
+  let p = {}; try { p = JSON.parse(localStorage.getItem(PREFS) || '{}'); } catch {}
+  $('#filter').value = p.q || '';
+  $('#sort').value = ['recent','name','busy'].includes(p.sort) ? p.sort : 'recent';
+  $('#prov').value = ['pragmatic','playtech'].includes(p.prov) ? p.prov : '';
+  return p;
+}
+function savePrefs(){
+  try { localStorage.setItem(PREFS, JSON.stringify({
+    q: $('#filter').value, op: $('#op').value, sort: $('#sort').value,
+    prov: $('#prov').value })); } catch {}
+}
+function saveHidden(){ try { localStorage.setItem(HIDDEN, JSON.stringify([...hidden])); } catch {} }
+const prefs = readPrefs();
+
+function toggleTable(id){
+  if (hidden.has(id)) hidden.delete(id); else hidden.add(id);
+  saveHidden(); render();
+}
+window.toggleTable = toggleTable;
+
+function ago(ms){
+  if (!ms) return '';
+  const s = Math.round((Date.now() - ms) / 1000);
+  return s < 3 ? 'now' : s < 60 ? s + 's' : Math.floor(s / 60) + 'm';
+}
+const cls = (c) => (c === 'red' ? 'red' : c === 'green' ? 'green' : 'black');
+
+let optSig = '';
+function syncOps(){
+  const sig = Object.keys(operatorsMap).sort().join(',');
+  if (sig === optSig) return; optSig = sig;
+  const keep = $('#op').value || prefs.op || '';
+  const ops = Object.keys(operatorsMap);
+  $('#op').innerHTML = '<option value="">All casinos</option>' +
+    ops.map((k) => '<option value="' + k + '">' + (operatorsMap[k].label || k) + '</option>').join('');
+  // default the view to Stoiximá on first load, as requested
+  let want = keep;
+  if (!defaultedOp && !keep) { want = ops.includes('stoiximan') ? 'stoiximan' : ''; defaultedOp = true; }
+  $('#op').value = ops.includes(want) ? want : '';
+}
+
+function card(t, selectedOp){
+  const r = t.results || [];
+  const opsList = t.operators || [];
+  // When a casino is selected, tag the card with THAT casino - showing the full list
+  // ("Winmasters · Stoiximá · Betsson") on a filtered view reads as if the filter
+  // failed. The same physical tables are white-labelled to several casinos, so the
+  // extra count keeps that visible without implying the filter is broken.
+  const opLabel = selectedOp
+    ? ((operatorsMap[selectedOp] || {}).label || selectedOp)
+    : (t.operatorLabel || '');
+  const alsoOn = opsList.filter((o) => o !== selectedOp)
+    .map((o) => (operatorsMap[o] || {}).label || o);
+  const extraTag = (selectedOp && alsoOn.length)
+    ? '<span class="tag muted" title="also on ' + alsoOn.join(', ') + '">+' + alsoOn.length + '</span>' : '';
+  // Cards are named the Stoiximá way throughout (see /api/roulette). When the casino
+  // being viewed calls this wheel something else, keep that on hover so the table is
+  // still findable in that casino's own lobby.
+  const viewedName = selectedOp && t.namesByOp ? t.namesByOp[selectedOp] : null;
+  const ownName = (viewedName && viewedName !== t.name)
+    ? ' title="' + (operatorsMap[selectedOp] || {}).label + ' calls this: ' + viewedName.replace(/"/g, '&quot;') + '"'
+    : '';
+  const latest = r[0];
+  const prev = r.slice(1, 19);
+  const last20 = r.slice(0, 20);
+  const reds = last20.filter((x) => x.color === 'red').length;
+  const blacks = last20.filter((x) => x.color === 'black').length;
+  const greens = last20.filter((x) => x.color === 'green').length;
+
+  const big = latest
+    ? '<div class="latest"><span class="big ' + cls(latest.color) + '">' + latest.n + '</span>' +
+      '<span class="ago">' + ago(t.updatedAt) + '</span></div>'
+    : '<div class="latest"><span class="big black">–</span><span class="ago">—</span></div>';
+
+  const strip = prev.length
+    ? '<div class="strip">' + prev.map((x, i) =>
+        '<span class="chip ' + cls(x.color) + (i > 9 ? ' faded' : '') + '">' + x.n + '</span>').join('') + '</div>'
+    : '<div class="strip"><span class="chip black faded">no history</span></div>';
+
+  const off = hidden.has(t.id);
+  const toggleBtn = manage
+    ? '<button class="pick' + (off ? '' : ' on') + '" onclick="toggleTable(\'' + t.id + '\')">' +
+      (off ? 'Show' : 'Hide') + '</button>' : '';
+
+  return { key: t.id, cls: 'tbl' + (t.open ? '' : ' closed') + (off ? ' off' : ''), html:
+    '<div class="thead">' +
+      '<span style="min-width:0"><span class="tname"' + ownName + '>' + t.name + '</span>' +
+        '<span class="tags"><span class="tag">' + opLabel + '</span>' + extraTag +
+          (t.provider === 'playtech' ? '<span class="tag pt">Playtech</span>' : '') +
+          (t.variant ? '<span class="tag">' + t.variant + '</span>' : '') +
+          (t.open ? '' : '<span class="tag">Closed</span>') + '</span>' +
+      '</span>' + big +
+    '</div>' + strip +
+    '<div class="foot">' +
+      '<span class="dl">' + (t.dealer || '—') + '</span>' +
+      (t.seated != null ? '<span class="sep">·</span><span>' + t.seated + ' seated</span>' : '') +
+      '<span class="rbg"><span class="r"><b>' + reds + '</b> R</span>' +
+        '<span class="b"><b>' + blacks + '</b> B</span>' +
+        '<span class="g"><b>' + greens + '</b> G</span></span>' + toggleBtn +
+    '</div>' };
+}
+
+/* keyed DOM patch, same approach as the blackjack wall */
+function patch(container, items){
+  const existing = new Map();
+  for (const el of container.children) existing.set(el.dataset.key, el);
+  let prev = null;
+  for (const it of items){
+    let el = existing.get(it.key);
+    if (el){ existing.delete(it.key);
+      if (el.__html !== it.html){ el.innerHTML = it.html; el.__html = it.html; }
+      if (el.className !== it.cls) el.className = it.cls;
+    } else { el = document.createElement('div'); el.dataset.key = it.key; el.className = it.cls;
+      el.innerHTML = it.html; el.__html = it.html; }
+    const want = prev ? prev.nextSibling : container.firstChild;
+    if (want !== el) container.insertBefore(el, want);
+    prev = el;
+  }
+  for (const el of existing.values()) el.remove();
+}
+
+// Provider health pills. A feed that stopped should be obvious here rather than
+// looking like a lobby that happens to be quiet.
+const FEED_CLS = { live: 'live', connecting: 'warn', minting: 'warn', reconnecting: 'warn', stale: 'bad',
+  error: 'bad', off: '', stopped: 'bad', idle: 'warn' };
+let feedSig = '';
+function renderFeeds(){
+  const order = [['pragmatic', 'Pragmatic'], ['playtech', 'Playtech']];
+  const html = order.map(([key, label]) => {
+    const p = providers[key];
+    if (!p) return '';
+    const cls = FEED_CLS[p.state] ?? '';
+    const age = p.lastDataAt ? Math.round((Date.now() - p.lastDataAt) / 1000) : null;
+    const tip = [label, 'state: ' + p.state,
+      p.tables != null ? p.tables + ' roulette tables' : null,
+      age != null ? 'last data ' + (age < 90 ? age + 's' : Math.round(age / 60) + 'm') + ' ago' : null,
+      p.lastError ? 'error: ' + p.lastError : null,
+      p.note || null].filter(Boolean).join('\n');
+    return '<span class="feed ' + cls + '" title="' + tip.replace(/"/g, '&quot;') + '">' +
+      '<span class="d"></span><b>' + label + '</b>' +
+      '<span class="n">' + (p.state === 'live' ? p.tables : p.state) + '</span></span>';
+  }).join('');
+  if (html !== feedSig) { feedSig = html; $('#feeds').innerHTML = html; }
+}
+
+const lastTime = (t) => (t.results && t.results[0] ? t.results[0].gameId || 0 : 0);
+function render(){
+  syncOps();
+  const q = $('#filter').value.trim().toLowerCase();
+  const op = $('#op').value, sort = $('#sort').value, prov = $('#prov').value;
+  let rows = tables.filter((t) => {
+    // a physical table can be carried by several casinos, so this is a membership test
+    if (op && !(t.operators || []).includes(op)) return false;
+    if (prov && t.provider !== prov) return false;
+    if (!manage && hidden.has(t.id)) return false;   // manage mode keeps them visible
+    if (q && !((t.name + ' ' + (t.dealer || '')).toLowerCase().includes(q))) return false;
+    // display rules from /settings
+    if (!manage) {
+      if (rules.hideClosed && t.open === false) return false;
+      const n = (t.results || []).length;
+      if (rules.hideNoResults && n === 0) return false;
+      if (rules.minSpins && n < rules.minSpins) return false;
+    }
+    return true;
+  });
+  // "hide duplicate wheels": the same physical table is sold under several casino
+  // names, so keep the first occurrence of each id only
+  if (!manage && rules.hideDupes) {
+    const seen = new Set();
+    rows = rows.filter((t) => (seen.has(t.id) ? false : (seen.add(t.id), true)));
+  }
+  const cmp =
+    sort === 'name' ? (a, b) => a.name.localeCompare(b.name) :
+    sort === 'busy' ? (a, b) => (b.seated || 0) - (a.seated || 0) || a.name.localeCompare(b.name) :
+                      (a, b) => (b.updatedAt || 0) - (a.updatedAt || 0) || a.name.localeCompare(b.name);
+  rows.sort(cmp);
+  $('#empty').hidden = rows.length > 0;
+  patch($('#board'), rows.map((t) => card(t, op)));
+  $('#ntables').textContent = rows.length;
+  $('#tally').textContent = tables.length + ' roulette tables';
+  // Say plainly how many of the shown tables are the same physical table offered by
+  // other casinos too - otherwise switching casino looks like it changed nothing.
+  const shared = op ? rows.filter((t) => (t.operators || []).length > 1).length : 0;
+  const nPrag = tables.filter((t) => t.provider === 'pragmatic').length;
+  const nPt = tables.filter((t) => t.provider === 'playtech').length;
+  $('#meta').textContent = rows.length + ' shown' +
+    (hidden.size ? ' · ' + hidden.size + ' hidden' : '') +
+    (shared ? ' · ' + shared + ' also on other casinos' : '') +
+    ' · pragmatic ' + nPrag + ' / playtech ' + nPt +
+    ' · updated ' + new Date().toLocaleTimeString();
+  renderFeeds();
+  // nav rail summary
+  $('#railrou').textContent = rows.length;
+  $('#railstat').innerHTML = '<span class="dot' + (tables.length ? ' live' : '') + '"></span>' +
+    'prag ' + nPrag + ' · play ' + nPt;
+}
+
+async function poll(){
+  try {
+    readRules();   // pick up anything changed on the settings page
+    const j = await (await fetch('/api/roulette')).json();
+    tables = j.tables || [];
+    operatorsMap = j.operators || {};
+    providers = j.providers || {};
+    render();
+  } catch {}
+}
+
+for (const id of ['#op','#sort','#prov']) $(id).addEventListener('change', () => { savePrefs(); render(); });
+$('#manage').addEventListener('click', () => {
+  manage = !manage;
+  $('#manage').classList.toggle('on', manage);
+  $('#manage').textContent = manage ? 'Done choosing' : 'Choose tables';
+  render();
+});
+$('#filter').addEventListener('input', () => { savePrefs(); render(); });
+document.addEventListener('keydown', (e) => {
+  const typing = /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName);
+  if (e.key === '/' && !typing){ e.preventDefault(); $('#filter').focus(); $('#filter').select(); }
+});
+
+poll();
+setInterval(poll, 1000);
+</script>
+</body>
+</html>

@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pattern Tracking</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600&family=Barlow:wght@400;500&family=JetBrains+Mono:wght@500;700&display=swap">
+<link rel="stylesheet" href="/shell.css">
+<style>
+:root{
+  --bg:#0d0d0d; --bg-wash:#1a1a19; --surface:#1a1a19; --surface-sunk:#151514;
+  --surface-raised:#222220; --border:#2c2c2a; --border-hover:#3d3d3a; --divider:#242422;
+  --row-hover:#212120; --track:#2c2c2a;
+  --ink:#ffffff; --ink-title:#ffffff; --ink-2:#c3c2b7; --ink-3:#c3c2b7;
+  --ink-muted:#898781; --ink-dim:#898781; --ink-faint:#898781; --ink-fainter:#6f6e69;
+  /* PATTERNS.md §2.1 — group colours, deliberately not red/black */
+  --group-a:#3987e5; --group-b:#d95926;
+  --ok:#0ca30c; --warn:#fab219; --bad:#d03b3b;
+  --brand:#3987e5; --brand-surface:#16304f; --brand-ink:#8fbdf2; --btn-border:#33332f;
+  --dot-closed:#3d3d3a; --hot:#0ca30c;
+  --f-cond:'Barlow Condensed','Arial Narrow',sans-serif;
+  --f-body:'Barlow',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --f-mono:'JetBrains Mono','SFMono-Regular',Consolas,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);min-height:100vh;color:var(--ink);
+  font:400 13px/1.5 var(--f-body);-webkit-font-smoothing:antialiased}
+
+header{position:sticky;top:0;z-index:20;backdrop-filter:blur(12px);
+  background:color-mix(in srgb,var(--bg) 92%,transparent);
+  border-bottom:1px solid var(--border);padding:12px 20px;display:flex;gap:14px;
+  align-items:center;flex-wrap:wrap}
+.logo{width:24px;height:32px;border-radius:5px;background:var(--brand-surface);
+  border:1px solid var(--brand);display:grid;place-items:center;flex:none;
+  font-family:var(--f-mono);font-weight:700;font-size:12px;color:var(--brand-ink)}
+h1{margin:0;font-family:var(--f-cond);font-weight:600;font-size:19px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-title);white-space:nowrap}
+.tally{font-family:var(--f-mono);font-weight:500;font-size:10px;letter-spacing:.1em;
+  color:var(--ink-fainter);white-space:nowrap}
+.spacer{flex:1 1 auto}
+select,input[type=search]{font:400 12px var(--f-body);padding:8px 10px;border-radius:6px;
+  border:1px solid var(--border);background:var(--surface-raised);color:var(--ink-2)}
+input[type=search]{min-width:170px}
+select:focus,input:focus{outline:none;border-color:var(--brand)}
+button{font:500 11px/1 var(--f-mono);letter-spacing:.1em;text-transform:uppercase;cursor:pointer;
+  border-radius:6px;border:1px solid var(--btn-border);background:var(--surface-raised);
+  color:var(--ink-dim);padding:8px 11px}
+button:hover{border-color:var(--border-hover);color:var(--ink)}
+button.on{border-color:var(--brand);background:var(--brand-surface);color:var(--brand-ink)}
+
+section{padding:18px 20px 4px}
+.shead{display:flex;align-items:center;gap:12px;margin:0 0 12px}
+.shead h2{margin:0;font-family:var(--f-cond);font-weight:600;font-size:12px;letter-spacing:.28em;
+  text-transform:uppercase;color:var(--brand-ink)}
+.shead .rule{flex:1 1 auto;height:1px;background:linear-gradient(90deg,var(--border),transparent)}
+.shead .meta{font-family:var(--f-mono);font-weight:500;font-size:9px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-fainter)}
+.toolbar{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+
+.board{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(390px,1fr))}
+.tbl{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.tbl.desync{border-color:var(--bad)}
+
+.thead{display:flex;align-items:center;gap:9px;padding:10px 12px 8px}
+.tname{font-family:var(--f-cond);font-weight:600;font-size:16px;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--ink-title);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;min-width:0}
+.tag{font-family:var(--f-mono);font-weight:500;font-size:8px;letter-spacing:.12em;
+  text-transform:uppercase;padding:2px 5px;border-radius:3px;background:var(--surface-raised);
+  color:var(--ink-dim);flex:none}
+.tag.pt{background:var(--brand-surface);color:var(--brand-ink)}
+.tag.bad{background:#3a1717;color:#f0a3a3}
+/* the current run, shown as a group letter — §2.1 keeps letter and colour together */
+.runmark{font-family:var(--f-mono);font-weight:700;font-size:11px;padding:2px 6px;border-radius:3px;
+  margin-left:auto;flex:none}
+.runmark.A{background:color-mix(in srgb,var(--group-a) 22%,transparent);color:var(--group-a)}
+.runmark.B{background:color-mix(in srgb,var(--group-b) 22%,transparent);color:var(--group-b)}
+
+/* spin strip */
+.strip{display:flex;gap:3px;flex-wrap:wrap;padding:2px 12px 10px}
+.sp{min-width:21px;height:21px;padding:0 5px;border-radius:4px;display:inline-flex;align-items:center;
+  justify-content:center;font-family:var(--f-mono);font-weight:700;font-size:10px;color:#fff}
+.sp.A{background:var(--group-a)} .sp.B{background:var(--group-b)}
+.sp.dim{opacity:.4}
+
+/* the two pattern panes */
+.pair{display:grid;grid-template-columns:1fr 1fr;border-top:1px solid var(--divider)}
+.pane{padding:9px 12px 11px}
+.pane + .pane{border-left:1px solid var(--divider)}
+.pane .lab{font-family:var(--f-mono);font-weight:500;font-size:8px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-fainter)}
+.cnt{font-family:var(--f-mono);font-weight:700;font-size:30px;line-height:1.05;letter-spacing:-.02em;
+  color:var(--ink)}
+/* §2.1 depth colouring: white to −1, amber from −2, red from −4 */
+.cnt.d2{color:var(--warn)} .cnt.d4{color:var(--bad)}
+.pane .sub{font-family:var(--f-mono);font-size:9px;color:var(--ink-fainter);margin-top:3px}
+.state{display:inline-block;font-family:var(--f-mono);font-weight:700;font-size:8px;
+  letter-spacing:.12em;text-transform:uppercase;padding:2px 5px;border-radius:3px;margin-top:6px}
+.state.armed{background:#3a2f10;color:var(--warn)}
+.state.build{background:var(--surface-raised);color:var(--ink-fainter)}
+.evt{font-family:var(--f-mono);font-weight:700;font-size:8px;letter-spacing:.12em;
+  text-transform:uppercase;margin-left:6px}
+.evt.COUNT{color:var(--ok)} .evt.RESET{color:var(--bad)} .evt.ARMED{color:var(--warn)}
+
+.empty{font-family:var(--f-mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-fainter);text-align:center;padding:40px 0}
+footer{padding:20px;font-family:var(--f-mono);font-size:9px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink-fainter)}
+.legend{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:12px;
+  font-family:var(--f-mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-fainter)}
+.legend b{font-weight:700}
+.legend .swatch{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;
+  vertical-align:middle}
+</style>
+</head>
+<body class="app">
+
+<div class="rail">
+  <div class="brand">
+    <span class="mark">A♠</span>
+    <span class="txt">Casino Wall<small>read-only monitor</small></span>
+  </div>
+  <nav>
+    <a class="item" href="/"><span class="ico">▦</span>Blackjack</a>
+    <a class="item" href="/roulette"><span class="ico">◉</span>Roulette</a>
+    <a class="item on" href="/patterns"><span class="ico">◈</span>Patterns<span class="badge" id="railpat"></span></a>
+    <a class="item" href="/settings"><span class="ico">⚙</span>Settings</a>
+  </nav>
+  <div class="foot"><span id="railstat"><span class="dot"></span>loading…</span></div>
+</div>
+
+<div class="page">
+
+<header>
+  <span class="logo">◈</span>
+  <h1>Pattern Tracking</h1>
+  <span class="tally" id="tally">—</span>
+  <span class="spacer"></span>
+  <input id="q" type="search" placeholder="Search table…   ( / )">
+  <select id="prov"><option value="">All providers</option>
+    <option value="pragmatic">Pragmatic</option><option value="playtech">Playtech</option></select>
+  <select id="sort">
+    <option value="deep">Sort · Deepest</option>
+    <option value="p1">Sort · Pattern 1</option>
+    <option value="p2">Sort · Pattern 2</option>
+    <option value="name">Sort · Name</option>
+  </select>
+  <select id="minc">
+    <option value="0">Any count</option>
+    <option value="1">≤ −1</option>
+    <option value="2">≤ −2</option>
+    <option value="3">≤ −3</option>
+    <option value="4">≤ −4</option>
+  </select>
+  <button id="armedonly">Armed only</button>
+  <button id="follow" title="show only the tables selected on the Settings page">Following settings</button>
+</header>
+
+<section>
+  <div class="shead"><h2>Live counts</h2><span class="rule"></span>
+    <span class="meta" id="meta"></span></div>
+  <div class="legend">
+    <span><span class="swatch" style="background:var(--group-a)"></span><b>A</b> 0,1,2,3,6,7,8,10,13,14,17,20,23,25,26,27,28,29</span>
+    <span><span class="swatch" style="background:var(--group-b)"></span><b>B</b> 4,5,9,11,12,15,16,18,19,21,22,24,30,31,32,33,34,35,36</span>
+    <span>P1 counts on <b>return</b> · P2 counts on <b>repeat</b></span>
+  </div>
+  <div class="board" id="board"></div>
+  <div class="empty" id="empty" hidden>No tables match these filters</div>
+</section>
+
+<footer>Counts advance server-side from the live roulette feed · a desynced table is wiped rather than guessed</footer>
+
+</div><!-- /page -->
+
+<script>
+const $ = (s) => document.querySelector(s);
+let tables = [], groups = { A: [], B: [] };
+let aSet = new Set();
+let armedOnly = false;
+
+const PREFS = 'patwall.prefs';
+// Shared with the roulette wall and /settings. Tracking still runs server-side for
+// every table - hiding one only stops it being drawn, so its count is intact and
+// correct the moment it is switched back on.
+const HIDDEN = 'roulwall.hidden';
+const RULES  = 'roulwall.rules';
+let hidden = new Set();
+let rules = { hideClosed: false, hideNoResults: false, minSpins: 0, hideDupes: false };
+let followSettings = true;   // can be turned off to inspect every tracked table
+
+function readSettings(){
+  try { hidden = new Set(JSON.parse(localStorage.getItem(HIDDEN) || '[]')); } catch {}
+  try { Object.assign(rules, JSON.parse(localStorage.getItem(RULES) || '{}')); } catch {}
+}
+function readPrefs(){
+  let p = {}; try { p = JSON.parse(localStorage.getItem(PREFS) || '{}'); } catch {}
+  $('#q').value = p.q || '';
+  $('#prov').value = p.prov || '';
+  $('#sort').value = p.sort || 'deep';
+  $('#minc').value = p.minc || '0';
+  armedOnly = !!p.armed;
+  $('#armedonly').classList.toggle('on', armedOnly);
+  followSettings = p.follow !== false;
+}
+function savePrefs(){
+  try { localStorage.setItem(PREFS, JSON.stringify({
+    q: $('#q').value, prov: $('#prov').value, sort: $('#sort').value,
+    minc: $('#minc').value, armed: armedOnly, follow: followSettings })); } catch {}
+}
+readPrefs();
+readSettings();
+
+const groupOf = (n) => (aSet.has(n) ? 'A' : 'B');
+// §2.1 depth colouring
+const depthCls = (c) => (c <= -4 ? 'cnt d4' : c <= -2 ? 'cnt d2' : 'cnt');
+const fmt = (c) => (c === 0 ? '0' : '−' + Math.abs(c));
+
+function pane(label, p){
+  const armed = p.phase === 'INTERRUPTED';
+  return '<div class="pane">' +
+    '<div class="lab">' + label + '</div>' +
+    '<div class="' + depthCls(p.count) + '">' + fmt(p.count) +
+      (p.lastEvent && p.lastEvent !== 'NONE'
+        ? '<span class="evt ' + p.lastEvent + '">' + p.lastEvent + '</span>' : '') +
+    '</div>' +
+    '<div class="state ' + (armed ? 'armed' : 'build') + '">' +
+      (armed ? 'armed · ' + p.originGroup + ' broken' : 'run ' + (p.runGroup || '–') + '×' + p.runLength) +
+    '</div>' +
+    '<div class="sub">deepest −' + Math.abs(p.deepest) + ' · ' + p.resets + ' resets · ' +
+      p.spinsObserved + ' seen</div>' +
+  '</div>';
+}
+
+function card(t){
+  const strip = (t.spins || []).slice(0, 20).map((n, i) =>
+    '<span class="sp ' + groupOf(n) + (i > 11 ? ' dim' : '') + '">' + n + '</span>').join('');
+  const run = t.p1.runGroup || t.p2.runGroup;
+  return { key: t.id, cls: 'tbl' + (t.desynced ? ' desync' : ''), html:
+    '<div class="thead">' +
+      '<span class="tname">' + t.name + '</span>' +
+      '<span class="tag' + (t.provider === 'playtech' ? ' pt' : '') + '">' + t.provider + '</span>' +
+      (t.desynced ? '<span class="tag bad">desynced</span>' : '') +
+      (run ? '<span class="runmark ' + run + '">' + run + '×' + (t.p1.runLength || 0) + '</span>' : '') +
+    '</div>' +
+    '<div class="strip">' + (strip || '<span class="sp dim">no spins</span>') + '</div>' +
+    '<div class="pair">' + pane('Pattern 1 · return', t.p1) + pane('Pattern 2 · repeat', t.p2) + '</div>' };
+}
+
+function patch(container, items){
+  const existing = new Map();
+  for (const el of container.children) existing.set(el.dataset.key, el);
+  let prev = null;
+  for (const it of items){
+    let el = existing.get(it.key);
+    if (el){ existing.delete(it.key);
+      if (el.__html !== it.html){ el.innerHTML = it.html; el.__html = it.html; }
+      if (el.className !== it.cls) el.className = it.cls;
+    } else {
+      el = document.createElement('div');
+      el.dataset.key = it.key; el.className = it.cls; el.innerHTML = it.html; el.__html = it.html;
+    }
+    const want = prev ? prev.nextSibling : container.firstChild;
+    if (want !== el) container.insertBefore(el, want);
+    prev = el;
+  }
+  for (const el of existing.values()) el.remove();
+}
+
+function render(){
+  const q = $('#q').value.trim().toLowerCase();
+  const prov = $('#prov').value, sort = $('#sort').value;
+  const minc = parseInt($('#minc').value, 10) || 0;
+  let rows = tables.filter((t) => {
+    // the table selection and display rules from /settings
+    if (followSettings) {
+      if (hidden.has(t.id)) return false;
+      if (rules.hideClosed && t.open === false) return false;
+      const n = (t.spins || []).length;
+      if (rules.hideNoResults && n === 0) return false;
+      if (rules.minSpins && n < rules.minSpins) return false;
+    }
+    if (prov && t.provider !== prov) return false;
+    if (q && !t.name.toLowerCase().includes(q)) return false;
+    if (minc && Math.max(Math.abs(t.p1.count), Math.abs(t.p2.count)) < minc) return false;
+    if (armedOnly && t.p1.phase !== 'INTERRUPTED' && t.p2.phase !== 'INTERRUPTED') return false;
+    return true;
+  });
+  if (followSettings && rules.hideDupes) {
+    const seen = new Set();
+    rows = rows.filter((t) => (seen.has(t.id) ? false : (seen.add(t.id), true)));
+  }
+  const best = (t) => Math.max(Math.abs(t.p1.count), Math.abs(t.p2.count));
+  const cmp =
+    sort === 'name' ? (a, b) => a.name.localeCompare(b.name) :
+    sort === 'p1'   ? (a, b) => Math.abs(b.p1.count) - Math.abs(a.p1.count) || a.name.localeCompare(b.name) :
+    sort === 'p2'   ? (a, b) => Math.abs(b.p2.count) - Math.abs(a.p2.count) || a.name.localeCompare(b.name) :
+                      (a, b) => best(b) - best(a) || a.name.localeCompare(b.name);
+  rows.sort(cmp);
+  $('#empty').hidden = rows.length > 0;
+  patch($('#board'), rows.map(card));
+
+  // counts describe what is on screen, not the whole tracker
+  const armed = rows.filter((t) => t.p1.phase === 'INTERRUPTED' || t.p2.phase === 'INTERRUPTED').length;
+  const deep = rows.filter((t) => best(t) >= 3).length;
+  const desync = rows.filter((t) => t.desynced).length;
+  const excluded = tables.length - rows.length;
+  $('#follow').classList.toggle('on', followSettings);
+  $('#follow').textContent = followSettings ? 'Following settings' : 'All tables';
+  $('#tally').textContent = tables.length + ' tracked' +
+    (followSettings && hidden.size ? ' · ' + hidden.size + ' off in settings' : '');
+  $('#meta').textContent = rows.length + ' shown · ' + armed + ' armed · ' + deep + ' at −3 or deeper' +
+    (desync ? ' · ' + desync + ' desynced' : '') +
+    (excluded ? ' · ' + excluded + ' filtered out' : '');
+  $('#railpat').textContent = deep ? String(deep) : '';
+  $('#railstat').innerHTML = '<span class="dot' + (tables.length ? ' live' : '') + '"></span>' +
+    armed + ' armed · ' + deep + ' deep';
+}
+
+for (const id of ['#prov','#sort','#minc']) $(id).addEventListener('change', () => { savePrefs(); render(); });
+$('#q').addEventListener('input', () => { savePrefs(); render(); });
+$('#armedonly').addEventListener('click', () => {
+  armedOnly = !armedOnly; $('#armedonly').classList.toggle('on', armedOnly); savePrefs(); render();
+});
+$('#follow').addEventListener('click', () => {
+  followSettings = !followSettings; savePrefs(); render();
+});
+document.addEventListener('keydown', (e) => {
+  const typing = /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName);
+  if (e.key === '/' && !typing) { e.preventDefault(); $('#q').focus(); $('#q').select(); }
+});
+
+async function poll(){
+  try {
+    readSettings();   // pick up table picks / rules changed on the settings page
+    const j = await (await fetch('/api/patterns')).json();
+    tables = j.tables || [];
+    if (j.groups) { groups = j.groups; aSet = new Set(groups.A); }
+    render();
+  } catch {}
+}
+poll();
+setInterval(poll, 1000);
+</script>
+</body>
+</html>
