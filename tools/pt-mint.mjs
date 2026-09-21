@@ -9,6 +9,7 @@
 // Usage: node tools/pt-mint.mjs [gameUrl] [--verbose]
 
 import WebSocket from 'ws';
+import { startProxy, windowArgs } from '../src/chrome.mjs';
 
 const PORT = Number(process.env.CDP_PORT || 9222);
 const GAME_URL = process.argv.find((a) => a.startsWith('http')) ||
@@ -22,6 +23,7 @@ const say = (m) => VERBOSE && console.error(m);
 async function cdpVersion() {
   try { return await (await fetch('http://127.0.0.1:' + PORT + '/json/version')).json(); } catch { return null; }
 }
+startProxy(); // an already-running Chrome may be relying on this process's forwarder
 let ver = await cdpVersion();
 let spawned = null;
 if (!ver) {
@@ -40,7 +42,7 @@ if (!ver) {
     '--remote-debugging-port=' + PORT,
     '--user-data-dir=' + path.join(ROOT, '.chrome-profile'),
     '--no-first-run', '--no-default-browser-check', ...platformArgs(),
-    '--window-position=-32000,-32000', '--window-size=1200,800',
+    ...windowArgs(),
     'about:blank',
   ], { detached: false, stdio: ['ignore', 'ignore', 'pipe'] });
   const why = stderrTail(spawned);

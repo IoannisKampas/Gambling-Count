@@ -21,7 +21,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import WebSocket from 'ws';
 import { saveSecret, loadSecret } from './secret-store.mjs';
-import { requireChrome, platformArgs, displayProblem, killTree, stderrTail } from './chrome.mjs';
+import { requireChrome, platformArgs, displayProblem, killTree, stderrTail, startProxy, windowArgs } from './chrome.mjs';
 
 // base name of the DPAPI-encrypted token in the per-user secret store. Each operator
 // gets its own entry so three logins can be persisted side by side; the historical
@@ -251,6 +251,7 @@ export class SessionProvider {
   }
 
   async #browser() {
+    startProxy(); // an already-running Chrome may be relying on this process's forwarder
     const existing = await endpointReady(0).catch(() => null);
     if (existing) return existing;
 
@@ -277,7 +278,7 @@ export class SessionProvider {
       ...platformArgs(),
       ...(headless
         ? ['--headless=new', '--disable-gpu']
-        : ['--window-position=-32000,-32000']),
+        : windowArgs()),
       'about:blank',
     ], {
       // stderr kept so a failed launch can report Chrome's own reason

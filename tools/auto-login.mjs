@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 import WebSocket from 'ws';
 import * as operators from '../src/operators.mjs';
 import { getCredentials } from '../src/credentials.mjs';
-import { requireChrome, platformArgs, displayProblem } from '../src/chrome.mjs';
+import { requireChrome, platformArgs, displayProblem, startProxy, windowArgs } from '../src/chrome.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PROFILE = path.join(ROOT, '.chrome-profile');
@@ -46,15 +46,16 @@ if (displayIssue) { console.error(displayIssue); process.exit(1); }
 async function cdpVersion() {
   try { return await (await fetch('http://127.0.0.1:' + PORT + '/json/version')).json(); } catch { return null; }
 }
+startProxy(); // an already-running Chrome may be relying on this process's forwarder
 let ver = await cdpVersion();
 let spawned = null;
 if (!ver) {
-  say('launching the profile off-screen');
+  say('launching the profile' + (process.env.SESSION_VISIBLE === '1' ? '' : ' off-screen'));
   spawned = spawn(CHROME, [
     '--remote-debugging-port=' + PORT,
     '--user-data-dir=' + PROFILE,
     '--no-first-run', '--no-default-browser-check', ...platformArgs(),
-    '--window-position=-32000,-32000', '--window-size=1280,900',
+    ...windowArgs(),
     'about:blank',
   ], { detached: false, stdio: 'ignore' });
   for (let i = 0; i < 60 && !ver; i++) { await new Promise((r) => setTimeout(r, 500)); ver = await cdpVersion(); }
@@ -137,7 +138,20 @@ say('signing in to ' + cfg.label + '…');
 // /login renders the real form inside a same-origin iframe (/myaccount/login), so the
 // password field is not in the top document. Loading that iframe URL directly hangs,
 // hence: open /login and reach into the frame via contentDocument.
-await goto(cfg.origin + '/login', 7000);
+await goto(cfg.origin + '/login', 2000);
+
+// The form is rendered by the page's own code, and behind a proxy that can take far
+// longer than any fixed pause - a 7s wait was enough locally and not on a VPS, where
+// the run then reported "could not find the login form". Wait for the field itself.
+const formReady = "(()=>{const vis=(e)=>e&&e.offsetParent!==null;const docs=[document];" +
+  "for(const f of document.querySelectorAll('iframe')){try{if(f.contentDocument)docs.push(f.contentDocument);}catch(x){}}" +
+  "return docs.some((d)=>[...d.querySelectorAll('input[type=password]')].some(vis))?'yes':'no';})()";
+let formSeen = false;
+for (let i = 0; i < 30 && !formSeen; i++) {
+  formSeen = (await evaluate(formReady, false)) === 'yes';
+  if (!formSeen) await new Promise((r) => setTimeout(r, 1000));
+}
+say('  login form: ' + (formSeen ? 'visible' : 'never appeared'));
 
 const fill = `(() => {
   const vis = (e) => e && e.offsetParent !== null;
@@ -183,15 +197,20 @@ const clickSubmit = `(() => {
   for (const d of docs) {
     const pw = [...d.querySelectorAll('input[type=password]')].find(vis);
     if (!pw) continue;
+    // Pick the button that submits, not merely the last one in the form: these forms
+    // also carry icon buttons (show password) and links styled as buttons, and clicking
+    // one of those is a silent no-op that reads as a successful submit.
     const form = pw.closest('form');
-    const btn = form
-      ? [...form.querySelectorAll('button,input[type=submit]')].filter(vis).pop()
-      : [...d.querySelectorAll('button')].filter(vis)
-          .find((b) => /login|sign ?in|σύνδεση|συνδεση/i.test(b.innerText || ''));
+    const label = (b) => (b.innerText || b.value || '').replace(/\s+/g, ' ').trim();
+    const avoid = (b) => /forgot|ξέχασα|ξεχασα|register|εγγραφ|cancel|άκυρο|ακυρο|close/i.test(label(b));
+    const submits = (b) => b.type === 'submit' || /log ?in|sign ?in|σύνδεση|συνδεση|είσοδος|εισοδος/i.test(label(b));
+    const cands = [...(form || d).querySelectorAll('button,input[type=submit]')].filter(vis);
+    const btn = cands.find((b) => submits(b) && !avoid(b)) ||
+      cands.filter((b) => label(b) && !avoid(b)).pop();
     if (btn) {
       if (btn.disabled) return 'disabled';
       btn.click();
-      return 'clicked';
+      return 'clicked "' + label(btn).slice(0, 30) + '"';
     }
     if (form) { form.submit(); return 'submitted-form'; }
   }
@@ -204,9 +223,11 @@ if (outcome === 'no-form' || outcome === 'no-user-field') {
   await finish(2, 'could not find the login form (layout changed, or a device check is in the way)');
 }
 
-// Give the form time to revalidate and enable its button, retrying a few times.
+// Give the form time to revalidate and enable its button, retrying a few times. Keep
+// this generous: behind a proxy the page's own scripts settle noticeably slower, and
+// giving up early is what leaves the credentials typed in with nothing submitted.
 let clicked = null;
-for (let i = 0; i < 8; i++) {
+for (let i = 0; i < 15; i++) {
   await new Promise((r) => setTimeout(r, 700));
   clicked = await evaluate(clickSubmit, false);
   if (clicked !== 'disabled') break;

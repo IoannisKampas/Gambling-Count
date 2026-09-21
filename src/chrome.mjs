@@ -83,14 +83,26 @@ export function proxySummary() {
 }
 
 let forwarder = null;
-let refusedWarned = false;
+const refusedSeen = new Set();
 
-// Said once per process, on stderr (tools print tokens on stdout).
-function refused(status) {
-  if (refusedWarned) return;
-  refusedWarned = true;
-  console.error('[warn] proxy ' + proxySummary() + ' refused the connection (HTTP ' + status + ')' +
-    (status === 407 ? ' - the username/password in SESSION_PROXY is wrong or missing' : ''));
+// Said once per host and status, on stderr (tools print tokens on stdout). The upstream's
+// status line and any error headers ride along: providers say why a target is blocked there.
+function refused(status, host, head) {
+  const key = host + ' ' + status;
+  if (refusedSeen.has(key)) return;
+  refusedSeen.add(key);
+  const detail = String(head || '').split(/\r?\n/)
+    .filter((l, i) => i === 0 || /^x-|error|reason|message/i.test(l)).join(' | ').slice(0, 240);
+  console.error('[warn] proxy ' + proxySummary() + ' refused ' + host + ' (HTTP ' + status + ')' +
+    (status === 407 ? ' - the username/password in SESSION_PROXY is wrong or missing' : '') +
+    (detail ? ' [' + detail + ']' : ''));
+}
+
+// Make sure this process serves the forwarder, even when it attaches to a Chrome that
+// someone else launched: that Chrome still points at the forwarder's port, and would
+// show "This site can't be reached" for every page if its original owner has exited.
+export function startProxy() {
+  ensureForwarder();
 }
 
 // Start the credential-adding forwarder once per process. Every Chrome-launching tool
@@ -108,7 +120,7 @@ function ensureForwarder() {
     const up = http.request({ host: PROXY.host, port: PROXY.port, method: req.method, path: req.url, headers },
       (upRes) => {
         if (upRes.statusCode === 407) {
-          refused(407);
+          refused(407, req.url, '');
           upRes.resume();
           res.writeHead(502).end();
           return;
@@ -138,7 +150,7 @@ function ensureForwarder() {
       up.off('data', onData);
       const status = Number(buf.toString('latin1', 0, end).split(' ')[1]);
       if (status !== 200) {
-        refused(status);
+        refused(status, req.url, buf.toString('latin1', 0, end));
         client.end('HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n');
         up.destroy();
         return;
@@ -192,6 +204,16 @@ export function displayProblem() {
   return 'no DISPLAY is set, so a headed Chrome cannot start. Run the process under a ' +
     'virtual display:  xvfb-run -a node …  (or start Xvfb :99 and export DISPLAY=:99). ' +
     'SESSION_HEADLESS=1 avoids needing one, but the operator answers headless with 403.';
+}
+
+// Where the browser window goes. By default far off-screen: the mint needs a real,
+// rendered window, but nobody wants it stealing focus or covering the desktop. Set
+// SESSION_VISIBLE=1 to keep it on-screen, which is how you watch what the app is doing
+// over VNC or a remote desktop.
+export function windowArgs() {
+  return process.env.SESSION_VISIBLE === '1'
+    ? ['--window-size=1280,900']
+    : ['--window-position=-32000,-32000', '--window-size=1200,800'];
 }
 
 // Keep the last few meaningful lines of a launched Chrome's stderr, so a launch that
