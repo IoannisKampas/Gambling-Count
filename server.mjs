@@ -248,16 +248,23 @@ async function mintPlaytech() {
 
 // Sign the Chrome profile back in from stored credentials. Best effort: a CAPTCHA or
 // 2FA will stop it, and it says so rather than retrying forever.
+// The last few lines of a child tool's output, which is where it says what it did.
+const trace = (stderr, fallback) => {
+  const lines = String(stderr || '').trim().split('\n').map((l) => l.trim()).filter(Boolean);
+  return (lines.slice(-4).join(' | ') || String(fallback || '').trim()).slice(0, 400);
+};
+
 async function autoLogin(op) {
   log.info('attempting auto-login for ' + op);
   try {
-    const { stdout, stderr } = await runNode(['tools/auto-login.mjs', op, '--quiet'], 180000);
+    // NOT --quiet: the tool's step trace (login form / form / submit) is the only
+    // record of where a silent sign-in stopped, and the last line alone never says.
+    const { stdout, stderr } = await runNode(['tools/auto-login.mjs', op], 180000);
     if (String(stdout).includes('signed-in')) { log.info(op + ' auto-login succeeded'); return true; }
-    log.warn(op + ' auto-login: ' + (String(stderr).trim().split('\n').pop() || stdout.trim()));
+    log.warn(op + ' auto-login: ' + trace(stderr, stdout));
     return false;
   } catch (e) {
-    const why = String(e.stdout || '').trim() || String(e.stderr || '').trim().split('\n').pop() || e.message;
-    log.warn(op + ' auto-login failed: ' + why.slice(0, 160));
+    log.warn(op + ' auto-login failed: ' + trace(e.stderr, e.stdout || e.message));
     return false;
   }
 }
@@ -273,7 +280,10 @@ async function refreshWithLogin(p, op, opts) {
   try {
     return await p.refresh(opts);
   } catch (e) {
-    if (!/signed out|no JSESSIONID/i.test(e.message)) throw e;
+    // A signed-out profile surfaces in several shapes: the launch API says so outright,
+    // the token never appears, or - behind the operator's bot protection - the chain
+    // simply answers 403 with an HTML page. All three are worth one sign-in attempt.
+    if (!/signed out|no JSESSIONID|no launch URL|HTTP 403/i.test(e.message)) throw e;
     log.warn(op + ' looks signed out — attempting auto-login before giving up');
     if (!(await autoLogin(op))) throw new Error(e.message + ' (auto-login could not fix it)');
     // the failed mint left a cooldown behind; this retry is deliberate, so skip it
