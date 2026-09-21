@@ -212,14 +212,21 @@ export function displayProblem() {
 // to Network.setBlockedURLs on every target a mint opens. Trailing * because the real
 // URLs carry query strings. Set MINT_LOAD_MEDIA=1 to load everything, which is worth
 // doing once if a mint ever stops finding its token.
-export const MINT_BLOCKED_URLS = process.env.MINT_LOAD_MEDIA === '1' ? [] : [
-  // video / audio: the live dealer stream, by far the biggest item
+// Video and audio only, deliberately. Blocking images and fonts as well saved more, but
+// a browser that renders a page while fetching no artwork at all is an odd-looking
+// client, and the operator's bot protection is exactly what is watching. The stream is
+// where the megabytes are anyway. MINT_BLOCK_IMAGES=1 restores the aggressive list.
+const HEAVY_MEDIA = [
   '*.m3u8*', '*.mpd*', '*.ts?*', '*.m4s*', '*.mp4*', '*.webm*', '*.mov*',
   '*.mp3*', '*.aac*', '*.ogg*', '*.wav*',
-  // artwork and fonts: small individually, plentiful on a casino page
+];
+const ARTWORK = [
   '*.jpg*', '*.jpeg*', '*.png*', '*.gif*', '*.webp*', '*.avif*', '*.svg*', '*.ico*',
   '*.woff*', '*.woff2*', '*.ttf*', '*.otf*', '*.eot*',
 ];
+export const MINT_BLOCKED_URLS = process.env.MINT_LOAD_MEDIA === '1' ? []
+  : process.env.MINT_BLOCK_IMAGES === '1' ? [...HEAVY_MEDIA, ...ARTWORK]
+  : HEAVY_MEDIA;
 
 // Where the browser window goes. By default far off-screen: the mint needs a real,
 // rendered window, but nobody wants it stealing focus or covering the desktop. Set
