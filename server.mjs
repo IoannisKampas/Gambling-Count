@@ -262,6 +262,25 @@ async function autoLogin(op) {
   }
 }
 
+// Mint a token, and if the profile turns out to be signed out, sign it back in and try
+// once more. Worth spelling out why this is needed: the mint itself never types or
+// clicks anything - it opens the operator's launch chain and reads the token off the
+// traffic. A signed-out profile therefore just lands that tab on the login page (where
+// Chrome's password manager may even fill the fields) and times out with nothing
+// pressed, which is what "it filled the form and never signed in" looks like from
+// outside. Playtech already had this retry; the Pragmatic operators did not.
+async function refreshWithLogin(p, op, opts) {
+  try {
+    return await p.refresh(opts);
+  } catch (e) {
+    if (!/signed out|no JSESSIONID/i.test(e.message)) throw e;
+    log.warn(op + ' looks signed out — attempting auto-login before giving up');
+    if (!(await autoLogin(op))) throw new Error(e.message + ' (auto-login could not fix it)');
+    // the failed mint left a cooldown behind; this retry is deliberate, so skip it
+    return await p.refresh({ ...(opts || {}), force: true });
+  }
+}
+
 // ----------------------------------------------------------------- playtech ----
 // Second provider for the roulette wall. Playtech's gateway needs an authenticated
 // player session and its token lives ~5 minutes, so the mint drives the real launch in
@@ -314,7 +333,7 @@ feeds.on('authfail', async ({ operator, id }) => {
   if (!provider || provider.status().refreshing) return;
   log.warn('auth failure on ' + id + ' (' + operator + ') - session looks dead, refreshing');
   try {
-    const fresh = await provider.refresh();
+    const fresh = await refreshWithLogin(provider, operator);
     feeds.setSession(operator, fresh);
     log.info(operator + ' session refreshed, tables reconnecting');
   } catch (e) {
@@ -359,7 +378,7 @@ async function checkSessions() {
     if (!p.jsessionid) {
       if (!p.mintReady) continue;
       try {
-        const s = await p.refresh();
+        const s = await refreshWithLogin(p, op);
         feeds.setSession(op, s);
         log.info(op + ' session provisioned automatically; capacity now ' + feeds.capacity());
       } catch (e) {
@@ -372,7 +391,7 @@ async function checkSessions() {
     if (await p.validate(p.jsessionid)) continue;
     log.warn(op + ' token is no longer valid — re-minting');
     try {
-      const fresh = await p.refresh();
+      const fresh = await refreshWithLogin(p, op);
       feeds.setSession(op, fresh);
       log.info(op + ' token refreshed automatically');
     } catch (e) {
@@ -392,7 +411,7 @@ async function reviveSession(op) {
   if (p.jsessionid && await p.validate(p.jsessionid)) return true; // already good
   if (!p.canMint) return false;                                    // needs a manual token
   try {
-    const s = await p.refresh(); // coalesces if a mint is already in flight; respects cooldown
+    const s = await refreshWithLogin(p, op); // coalesces if a mint is already in flight; respects cooldown
     feeds.setSession(op, s);
     log.info(op + ' session revived for auto-fill');
     return true;
@@ -714,7 +733,7 @@ async function routeRest(req, res, url) {
     if (!operators.has(op)) return json(res, 400, { error: 'unknown operator: ' + op });
     try {
       const p = provider(op);
-      const s = await p.refresh({ force: true }); // user asked; ignore any cooldown
+      const s = await refreshWithLogin(p, op, { force: true }); // user asked; ignore any cooldown
       feeds.setSession(op, s);
       log.info(op + ' session minted on request');
       return json(res, 200, { ok: true, sessions: sessionStates(), max: feeds.capacity() });
