@@ -206,6 +206,21 @@ export function displayProblem() {
     'SESSION_HEADLESS=1 avoids needing one, but the operator answers headless with 403.';
 }
 
+// A mint only needs the traffic that carries the token: the launch chain's own requests
+// and the game client's bootstrap. The video stream, images and fonts are pure cost -
+// and on a metered proxy that cost is measured in megabytes per mint. These patterns go
+// to Network.setBlockedURLs on every target a mint opens. Trailing * because the real
+// URLs carry query strings. Set MINT_LOAD_MEDIA=1 to load everything, which is worth
+// doing once if a mint ever stops finding its token.
+export const MINT_BLOCKED_URLS = process.env.MINT_LOAD_MEDIA === '1' ? [] : [
+  // video / audio: the live dealer stream, by far the biggest item
+  '*.m3u8*', '*.mpd*', '*.ts?*', '*.m4s*', '*.mp4*', '*.webm*', '*.mov*',
+  '*.mp3*', '*.aac*', '*.ogg*', '*.wav*',
+  // artwork and fonts: small individually, plentiful on a casino page
+  '*.jpg*', '*.jpeg*', '*.png*', '*.gif*', '*.webp*', '*.avif*', '*.svg*', '*.ico*',
+  '*.woff*', '*.woff2*', '*.ttf*', '*.otf*', '*.eot*',
+];
+
 // Where the browser window goes. By default far off-screen: the mint needs a real,
 // rendered window, but nobody wants it stealing focus or covering the desktop. Set
 // SESSION_VISIBLE=1 to keep it on-screen, which is how you watch what the app is doing

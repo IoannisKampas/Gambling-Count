@@ -21,7 +21,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import WebSocket from 'ws';
 import { saveSecret, loadSecret } from './secret-store.mjs';
-import { requireChrome, platformArgs, displayProblem, killTree, stderrTail, startProxy, windowArgs } from './chrome.mjs';
+import { requireChrome, platformArgs, displayProblem, killTree, stderrTail, startProxy, windowArgs,
+  MINT_BLOCKED_URLS } from './chrome.mjs';
 
 // base name of the DPAPI-encrypted token in the per-user secret store. Each operator
 // gets its own entry so three logins can be persisted side by side; the historical
@@ -315,11 +316,15 @@ export class SessionProvider {
       // watch every frame, including the provider's cross-origin game iframe
       const sessions = new Set([sessionId]);
       let found = null;
+      let bytes = 0;
       const off = cdp.on((m) => {
+        if (m.method === 'Network.loadingFinished') bytes += m.params.encodedDataLength || 0;
         if (m.method === 'Target.attachedToTarget') {
           const sid = m.params.sessionId;
           sessions.add(sid);
           cdp.send('Network.enable', {}, sid).catch(() => {});
+          // the stream lives in this iframe target, so block it here too
+          cdp.send('Network.setBlockedURLs', { urls: MINT_BLOCKED_URLS }, sid).catch(() => {});
           cdp.send('Target.setAutoAttach',
             { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }, sid).catch(() => {});
           cdp.send('Runtime.runIfWaitingForDebugger', {}, sid).catch(() => {});
@@ -332,6 +337,7 @@ export class SessionProvider {
       });
 
       await cdp.send('Network.enable', {}, sessionId);
+      await cdp.send('Network.setBlockedURLs', { urls: MINT_BLOCKED_URLS }, sessionId).catch(() => {});
       await cdp.send('Page.enable', {}, sessionId);
       await cdp.send('Target.setAutoAttach',
         { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }, sessionId);
@@ -347,6 +353,8 @@ export class SessionProvider {
       const until = Date.now() + 45000;
       while (!found && Date.now() < until) await sleep(250);
       off();
+      this.log('mint transferred ~' + Math.round(bytes / 1024) + ' KB' +
+        (MINT_BLOCKED_URLS.length ? '' : ' (media not blocked)'));
       if (!found) {
         // Two different causes for a gamePage mint, and guessing wrong wastes time:
         // either nothing is signed in, or the configured URL loads no game.

@@ -9,7 +9,7 @@
 // Usage: node tools/pt-mint.mjs [gameUrl] [--verbose]
 
 import WebSocket from 'ws';
-import { startProxy, windowArgs } from '../src/chrome.mjs';
+import { startProxy, windowArgs, MINT_BLOCKED_URLS } from '../src/chrome.mjs';
 
 const PORT = Number(process.env.CDP_PORT || 9222);
 const GAME_URL = process.argv.find((a) => a.startsWith('http')) ||
@@ -63,7 +63,7 @@ const cmd = (method, params = {}, sessionId) => new Promise((resolve, reject) =>
   setTimeout(() => { if (pend.has(i)) { pend.delete(i); reject(new Error(method + ' timed out')); } }, 20000);
 });
 
-let token = null, meta = null;
+let token = null, meta = null, bytes = 0;
 let resolveToken;
 const gotToken = new Promise((r) => { resolveToken = r; });
 
@@ -92,9 +92,12 @@ ws.on('message', (raw) => {
     return o.error ? p.reject(new Error(o.error.message)) : p.resolve(o.result);
   }
   // enable Network on every target as it attaches (the game runs in its own iframe target)
+  if (o.method === 'Network.loadingFinished') bytes += o.params.encodedDataLength || 0;
   if (o.method === 'Target.attachedToTarget') {
     const sid = o.params.sessionId;
     cmd('Network.enable', { maxPostDataSize: 65536 }, sid).catch(() => {});
+    // the dealer stream loads in the game's own target; the token does not need it
+    cmd('Network.setBlockedURLs', { urls: MINT_BLOCKED_URLS }, sid).catch(() => {});
     cmd('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true }, sid).catch(() => {});
     cmd('Runtime.runIfWaitingForDebugger', {}, sid).catch(() => {});
     say('  attached ' + (o.params.targetInfo || {}).type);
@@ -112,6 +115,7 @@ await cmd('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: tr
 const { targetId } = await cmd('Target.createTarget', { url: GAME_URL, background: true });
 const { sessionId } = await cmd('Target.attachToTarget', { targetId, flatten: true });
 await cmd('Network.enable', { maxPostDataSize: 65536 }, sessionId).catch(() => {});
+await cmd('Network.setBlockedURLs', { urls: MINT_BLOCKED_URLS }, sessionId).catch(() => {});
 await cmd('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true }, sessionId).catch(() => {});
 say('opened ' + GAME_URL);
 
@@ -134,5 +138,7 @@ if (!token) {
   process.exit(1);
 }
 say('  user ' + meta.user + '  expires ' + meta.expires);
+say('  transferred ~' + Math.round(bytes / 1024) + ' KB' +
+  (MINT_BLOCKED_URLS.length ? '' : ' (media not blocked)'));
 process.stdout.write(token);
 process.exit(0);
