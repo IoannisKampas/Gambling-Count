@@ -184,7 +184,23 @@ function ensureForwarder() {
 //   --proxy-server          : only with SESSION_PROXY. WebRTC is held to the proxy too,
 //                             or it would reveal the host's own IP around it.
 export function platformArgs() {
-  const args = [];
+  // Chrome talks to Google constantly on its own account: ML model downloads for the
+  // optimization guide, component and binary updates, GCM push, Safe Browsing, autofill
+  // and metrics. On a metered proxy that measured 98 MB out of 230 - 43% of the bill -
+  // and none of it is visible to the site being visited, so switching it off changes
+  // nothing about how the browser looks and everything about what it costs.
+  const args = [
+    '--disable-background-networking',
+    '--disable-component-update',
+    '--disable-sync',
+    '--disable-domain-reliability',
+    '--disable-breakpad',
+    '--no-pings',
+    '--metrics-recording-only',
+    '--disable-features=OptimizationGuideModelDownloading,OptimizationHints,' +
+      'OptimizationTargetPrediction,Translate,MediaRouter,AutofillServerCommunication,' +
+      'InterestFeedContentSuggestions',
+  ];
   if (PROXY) {
     ensureForwarder();
     args.push('--proxy-server=http://127.0.0.1:' + PROXY_LOCAL_PORT,
@@ -224,9 +240,30 @@ const ARTWORK = [
   '*.jpg*', '*.jpeg*', '*.png*', '*.gif*', '*.webp*', '*.avif*', '*.svg*', '*.ico*',
   '*.woff*', '*.woff2*', '*.ttf*', '*.otf*', '*.eot*',
 ];
+// Advertising, analytics and session-recording third parties. 48 MB of a measured 230,
+// and nothing here is part of the launch chain. Opt-in (MINT_BLOCK_TRACKERS=1) rather
+// than default: a page that loads none of its usual analytics is a slightly odd client,
+// and the operator's bot protection is the audience.
+//
+// Deliberately NOT in this list, and never add them: datadome, captcha-delivery,
+// seondnsresolve, deviceinf, dd.betano, da.stoiximan. Those ARE the bot protection -
+// blocking them is a guaranteed challenge rather than a saving.
+const TRACKERS = [
+  '*googletagmanager.com*', '*google-analytics.com*', '*analytics.google.com*',
+  '*doubleclick.net*', '*googlesyndication.com*',
+  '*connect.facebook.net*', '*www.facebook.com*', '*bat.bing.com*',
+  '*taboola.com*', '*adform.net*', '*fullstory.com*', '*optimove.net*',
+  '*kumulos.com*', '*bannerflow.net*', '*greencolumnart.com*', '*lgrckt-in.com*',
+  '*live-hub.net*', '*asiansimplerecipes.net*', '*cloudflareinsights.com*',
+  '*csp-reporting.cloudflare.com*', '*static.app.delivery*', '*cookielaw.org*',
+];
+
 export const MINT_BLOCKED_URLS = process.env.MINT_LOAD_MEDIA === '1' ? []
-  : process.env.MINT_BLOCK_IMAGES === '1' ? [...HEAVY_MEDIA, ...ARTWORK]
-  : HEAVY_MEDIA;
+  : [
+    ...HEAVY_MEDIA,
+    ...(process.env.MINT_BLOCK_IMAGES === '1' ? ARTWORK : []),
+    ...(process.env.MINT_BLOCK_TRACKERS === '1' ? TRACKERS : []),
+  ];
 
 // Where the browser window goes. By default far off-screen: the mint needs a real,
 // rendered window, but nobody wants it stealing focus or covering the desktop. Set
