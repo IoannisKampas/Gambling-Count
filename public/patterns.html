@@ -16,7 +16,7 @@
   --ink:#ffffff; --ink-title:#ffffff; --ink-2:#c3c2b7; --ink-3:#c3c2b7;
   --ink-muted:#898781; --ink-dim:#898781; --ink-faint:#898781; --ink-fainter:#6f6e69;
   /* PATTERNS.md §2.1 — group colours, deliberately not red/black */
-  --group-a:#3987e5; --group-b:#d95926;
+  --group-a:#3987e5; --group-b:#d95926; --group-c:#a855f7;
   --ok:#0ca30c; --warn:#fab219; --bad:#d03b3b;
   --brand:#3987e5; --brand-surface:#16304f; --brand-ink:#8fbdf2; --btn-border:#33332f;
   --dot-closed:#3d3d3a; --hot:#0ca30c;
@@ -60,7 +60,7 @@ section{padding:18px 20px 4px}
 .shead .meta{font-family:var(--f-mono);font-weight:500;font-size:9px;letter-spacing:.14em;
   text-transform:uppercase;color:var(--ink-fainter)}
 
-/* reading tabs — §1.1: five readings each with an opposite, a row each. A reading's
+/* reading tabs — §1.1: each reading beside its opposite, a row each. A reading's
    colour says which group's run arms it; the 2 suffix separates each pair, so nothing
    is carried by colour alone. */
 .tabs{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px}
@@ -70,6 +70,7 @@ section{padding:18px 20px 4px}
 .tab:hover{border-color:var(--border-hover);color:var(--ink)}
 .tab.gA{color:color-mix(in srgb,var(--group-a) 80%,#fff)}
 .tab.gB{color:color-mix(in srgb,var(--group-b) 80%,#fff)}
+.tab.gC{color:color-mix(in srgb,var(--group-c) 80%,#fff)}
 .tab.on{background:var(--brand-surface);border-color:var(--brand)}
 .tab .n{font-weight:500;color:var(--ink-fainter);margin-left:6px}
 
@@ -105,17 +106,21 @@ section{padding:18px 20px 4px}
 .sp{min-width:21px;height:21px;padding:0 5px;border-radius:4px;display:inline-flex;align-items:center;
   justify-content:center;font-family:var(--f-mono);font-weight:700;font-size:10px;color:#fff}
 .sp.A{background:var(--group-a)} .sp.B{background:var(--group-b)}
+.sp.C{background:var(--group-c)} .sp.notC{background:var(--surface-raised);color:var(--ink-dim)}
 .sp.dim{opacity:.4}
 
-/* all ten readings: five pairs, a row each (§1.1) */
+/* every reading: a pair per row (§1.1) */
 .reads{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--divider);
   border-top:1px solid var(--divider)}
-.cell{background:var(--surface);padding:7px 10px;display:flex;align-items:center;gap:8px;
-  min-height:38px}
+.cell{background:var(--surface);padding:6px 10px;display:flex;align-items:center;gap:8px;
+  min-height:33px}
 .cell .nm{font-family:var(--f-mono);font-weight:700;font-size:9px;letter-spacing:.1em;
   text-transform:uppercase;color:var(--ink-fainter);white-space:nowrap}
 .cell.gA .nm{color:color-mix(in srgb,var(--group-a) 78%,#fff)}
 .cell.gB .nm{color:color-mix(in srgb,var(--group-b) 78%,#fff)}
+.cell.gC .nm{color:color-mix(in srgb,var(--group-c) 78%,#fff)}
+/* a reading with no opposite takes the whole row */
+.cell.wide{grid-column:1 / -1}
 .cell .st{font-family:var(--f-mono);font-weight:700;font-size:7.5px;letter-spacing:.1em;
   text-transform:uppercase;padding:2px 4px;border-radius:3px;color:var(--ink-fainter);
   background:var(--surface-raised)}
@@ -137,6 +142,7 @@ section{padding:18px 20px 4px}
   text-transform:uppercase;color:var(--ink-fainter)}
 .solo .lab.gA{color:color-mix(in srgb,var(--group-a) 78%,#fff)}
 .solo .lab.gB{color:color-mix(in srgb,var(--group-b) 78%,#fff)}
+.solo .lab.gC{color:color-mix(in srgb,var(--group-c) 78%,#fff)}
 .solo .needs{font:400 11px var(--f-body);color:var(--ink-muted);margin-top:2px}
 .solo .sub{font-family:var(--f-mono);font-size:9px;color:var(--ink-fainter);margin-top:5px}
 .state{display:inline-block;font-family:var(--f-mono);font-weight:700;font-size:8px;
@@ -170,6 +176,7 @@ footer{padding:20px;font-family:var(--f-mono);font-size:9px;letter-spacing:.12em
     <a class="item" href="/"><span class="ico">▦</span>Blackjack</a>
     <a class="item" href="/roulette"><span class="ico">◉</span>Roulette</a>
     <a class="item on" href="/patterns"><span class="ico">◈</span>Patterns<span class="badge" id="railpat"></span></a>
+    <a class="item" href="/alerts"><span class="ico">✉</span>Alerts</a>
     <a class="item" href="/settings"><span class="ico">⚙</span>Settings</a>
   </nav>
   <div class="foot"><span id="railstat"><span class="dot"></span>loading…</span></div>
@@ -186,7 +193,7 @@ footer{padding:20px;font-family:var(--f-mono);font-size:9px;letter-spacing:.12em
   <select id="prov"><option value="">All providers</option>
     <option value="pragmatic">Pragmatic</option><option value="playtech">Playtech</option></select>
   <select id="sort">
-    <option value="deep">Sort · Deepest of ten</option>
+    <option value="deep">Sort · Deepest of all</option>
     <option value="focus">Sort · Chosen reading</option>
     <option value="name">Sort · Name</option>
   </select>
@@ -214,7 +221,8 @@ footer{padding:20px;font-family:var(--f-mono);font-size:9px;letter-spacing:.12em
   <div class="legend">
     <span><span class="swatch" style="background:var(--group-a)"></span><b>A</b> 0,1,2,3,6,7,8,10,13,14,17,20,23,25,26,27,28,29</span>
     <span><span class="swatch" style="background:var(--group-b)"></span><b>B</b> 4,5,9,11,12,15,16,18,19,21,22,24,30,31,32,33,34,35,36</span>
-    <span>blue = arms on an <b>A</b> run · orange = on a <b>B</b> run · All in = either</span>
+    <span><span class="swatch" style="background:var(--group-c)"></span><b>C</b> 0,2,3,5,8,10,17,21,23,25,26,30,32,34,35 — overlaps A and B</span>
+    <span>blue = arms on an <b>A</b> run · orange = on a <b>B</b> run · All in = either · purple = Group C</span>
     <span>count colour: white to −1 · amber −2 · red −4</span>
     <span><span style="color:var(--ok)">●</span> alerting reading</span>
   </div>
@@ -230,14 +238,14 @@ footer{padding:20px;font-family:var(--f-mono);font-size:9px;letter-spacing:.12em
 <script>
 const $ = (s) => document.querySelector(s);
 let tables = [], groups = { A: [], B: [] }, readings = [], alerting = 'allin1';
-let aSet = new Set();
+let aSet = new Set(), cSet = new Set();
 let armedOnly = false;
 // which tables push to Telegram. Server-side state (data/alerts.json), not localStorage:
 // the pushes are sent by the server, so the choice has to be somewhere it can see.
 let pushTables = new Set();
-let pushAll = false, pushConfigured = false, pushDepth = 4;
+let pushAll = false, pushConfigured = false, pushDepth = 4, pushDepths = {};
 let bellsOnly = false;
-let focusId = '';          // '' = show all ten readings on every card
+let focusId = '';          // '' = show every reading on every card
 
 const PREFS = 'patwall.prefs';
 // Shared with the roulette wall and /settings. Tracking still runs server-side for
@@ -279,11 +287,15 @@ const groupOf = (n) => (aSet.has(n) ? 'A' : 'B');
 // §2.1 depth colouring
 const depthCls = (c) => (c <= -4 ? 'c d4' : c <= -2 ? 'c d2' : 'c' + (c === 0 ? ' zero' : ''));
 const fmt = (c) => (c === 0 ? '0' : '−' + Math.abs(c));
-const sideCls = (r) => (r.side === 'A' ? 'gA' : r.side === 'B' ? 'gB' : '');
+const sideCls = (r) => (r.side === 'A' ? 'gA' : r.side === 'B' ? 'gB' : r.side === 'C' ? 'gC' : '');
 const reading = (id) => readings.find((r) => r.id === id) || null;
-// the readings in display order: five pairs, a row each (§1.1)
+// the readings in display order: a pair per row (§1.1), deepest arming last
 const PAIRS = [['allin1','allin2'],['monada','monada2'],['diada','diada2'],
-  ['triada','triada2'],['enaduo','enaduo2']];
+  ['triada','triada2'],['tetrada','tetrada2'],['pentada','pentada2'],['enaduo','enaduo2'],
+  ['serie1','serie2']];
+// readings with no opposite sit on their own row, after the pairs
+const SOLO_ROWS = ['andreas'];
+const ORDER = [...PAIRS.flat(), ...SOLO_ROWS];
 
 // which reading the filters and sorting use; with no tab chosen, the deepest of ten
 const pick = (t) => (focusId ? t.reads[focusId] : null);
@@ -295,8 +307,8 @@ const anyArmed = (t) => (focusId
 
 function tabs(){
   const armedCount = (id) => tables.filter((t) => t.reads[id] && t.reads[id].phase === 'INTERRUPTED').length;
-  const html = ['<span class="tab' + (focusId ? '' : ' on') + '" data-id="">All ten</span>'];
-  for (const [a, b] of PAIRS) for (const id of [a, b]) {
+  const html = ['<span class="tab' + (focusId ? '' : ' on') + '" data-id="">All</span>'];
+  for (const id of ORDER) {
     const r = reading(id); if (!r) continue;
     html.push('<span class="tab ' + sideCls(r) + (focusId === id ? ' on' : '') + '" data-id="' + id +
       '" title="' + r.needs + '">' + r.label +
@@ -307,17 +319,35 @@ function tabs(){
   if (el.__html !== next) { el.innerHTML = next; el.__html = next; }
 }
 
+// A streak reading has no run to build and nothing to arm: it counts spins on one side
+// of a membership, so it says that instead of a run state. The wording follows the
+// direction - "7 in a row" for Serie, "7 since C" for Andreas Deluxe.
+const isStreak = (r) => !!r && r.kind === 'streak';
+const streakText = (r, p) => {
+  if (!p.runLength) return r.deepensOn === 'in' ? 'waiting' : r.group + ' just hit';
+  return r.deepensOn === 'in'
+    ? p.runLength + ' ' + r.group + ' in a row'
+    : p.runLength + ' since ' + r.group;
+};
+
 // one compact line per reading: name, armed/run state, count
 function cell(r, p){
   const armed = p.phase === 'INTERRUPTED';
+  const streak = isStreak(r);
+  const state = streak ? streakText(r, p)
+    : armed ? 'armed' : (p.runGroup || '–') + '×' + p.runLength;
   const title = r.label + ' — ' + r.needs +
     '\ndeepest −' + Math.abs(p.deepest) + ' · ' + p.resets + ' resets · ' + p.spinsObserved + ' spins seen' +
-    (armed ? '\narmed: ' + p.originGroup + ' run broken, ' + p.runGroup + '×' + p.runLength + ' against it'
-           : '\nbuilding: ' + (p.runGroup || '–') + '×' + p.runLength);
+    (streak ? '\n' + streakText(r, p)
+     : armed ? '\narmed: ' + p.originGroup + ' run broken, ' + p.runGroup + '×' + p.runLength + ' against it'
+           : '\nbuilding: ' + (p.runGroup || '–') + '×' + p.runLength) +
+    // every reading has its own push threshold; say which one applies here
+    '\npushes at −' + (pushDepths[r.id] || r.alertDepth || pushDepth);
   return '<div class="cell ' + sideCls(r) + (armed ? ' is-armed' : '') +
+      (SOLO_ROWS.includes(r.id) ? ' wide' : '') +
       (r.id === alerting ? ' alert' : '') + '" title="' + title + '">' +
     '<span class="nm">' + r.label + '</span>' +
-    '<span class="st">' + (armed ? 'armed' : (p.runGroup || '–') + '×' + p.runLength) + '</span>' +
+    '<span class="st">' + state + '</span>' +
     '<span class="' + depthCls(p.count) + '">' + fmt(p.count) +
       (p.lastEvent && p.lastEvent !== 'NONE'
         ? '<span class="evt ' + p.lastEvent + '">' + p.lastEvent + '</span>' : '') +
@@ -337,30 +367,37 @@ function solo(r, p){
           ? '<span class="evt ' + p.lastEvent + '">' + p.lastEvent + '</span>' : '') + '</div>' +
       '<div class="needs">' + r.needs + '</div>' +
       '<div class="state ' + (armed ? 'armed' : 'build') + '">' +
-        (armed ? 'armed · ' + p.originGroup + ' broken · ' + p.runGroup + '×' + p.runLength
+        (isStreak(r) ? streakText(r, p)
+          : armed ? 'armed · ' + p.originGroup + ' broken · ' + p.runGroup + '×' + p.runLength
                : 'building · run ' + (p.runGroup || '–') + '×' + p.runLength) + '</div>' +
       '<div class="sub">deepest −' + Math.abs(p.deepest) + ' · ' + p.resets + ' resets · ' +
-        p.spinsObserved + ' seen</div>' +
+        p.spinsObserved + ' seen · pushes at −' + (pushDepths[r.id] || r.alertDepth || pushDepth) + '</div>' +
     '</div>' +
   '</div>';
 }
 
 function card(t){
+  // while a group-C reading is in focus the strip answers its question instead: in the
+  // group, or not. A/B colours would say nothing about why that count moved.
+  const focusRule = focusId ? reading(focusId) : null;
+  const stripCls = (isStreak(focusRule) && focusRule.group === 'C')
+    ? (n) => (cSet.has(n) ? 'C' : 'notC')
+    : (n) => groupOf(n);
   const strip = (t.spins || []).slice(0, 20).map((n, i) =>
-    '<span class="sp ' + groupOf(n) + (i > 11 ? ' dim' : '') + '">' + n + '</span>').join('');
+    '<span class="sp ' + stripCls(n) + (i > 11 ? ' dim' : '') + '">' + n + '</span>').join('');
   // the run is the same in every reading that is still building; All in 1 is as good a
   // source as any for the header mark
   const base = t.reads.allin1 || t.reads[readings[0] && readings[0].id];
   const run = base && base.runGroup;
   const body = focusId && reading(focusId)
     ? solo(reading(focusId), t.reads[focusId])
-    : '<div class="reads">' + PAIRS.flat().map((id) => {
+    : '<div class="reads">' + ORDER.map((id) => {
         const r = reading(id); return r && t.reads[id] ? cell(r, t.reads[id]) : '';
       }).join('') + '</div>';
   const on = pushAll || pushTables.has(t.id);
   const bell = '<button class="bell' + (on ? ' on' : '') + '" data-bell="' + t.id + '" title="' +
     (pushAll ? 'ALERT_ALL=1: every table pushes' : on ? 'pushing to Telegram — click to stop' :
-      'click to push −' + pushDepth + ' alerts for this table') + '">🔔</button>';
+      'click to push alerts for this table') + '">🔔</button>';
   return { key: t.id, cls: 'tbl' + (t.desynced ? ' desync' : ''), html:
     '<div class="thead">' +
       bell +
@@ -440,12 +477,12 @@ function render(){
   const deep = rows.filter((t) => depthOf(t) >= 3).length;
   const desync = rows.filter((t) => t.desynced).length;
   const excluded = tables.length - rows.length;
-  const scope = focusId ? (reading(focusId) || {}).label : 'ten readings';
+  const scope = focusId ? (reading(focusId) || {}).label : readings.length + ' readings';
   $('#follow').classList.toggle('on', followSettings);
   $('#follow').textContent = followSettings ? 'Following settings' : 'All tables';
   const pushNote = !pushConfigured ? 'push off'
     : pushAll ? '🔔 every table'
-    : pushTables.size ? '🔔 ' + pushTables.size + ' at −' + pushDepth
+    : pushTables.size ? '🔔 ' + pushTables.size + ' armed'
     : '🔔 none selected';
   $('#tally').textContent = tables.length + ' tracked · ' + scope + ' · ' + pushNote +
     (followSettings && hidden.size ? ' · ' + hidden.size + ' off in settings' : '');
@@ -535,11 +572,18 @@ async function poll(){
       pushAll = !!j.push.all;
       pushConfigured = !!j.push.configured;
       pushDepth = j.push.depth || 4;
+      pushDepths = j.push.depths || {};
     }
-    if (j.groups) { groups = j.groups; aSet = new Set(groups.A); }
+    if (j.groups) { groups = j.groups; aSet = new Set(groups.A); cSet = new Set(groups.C || []); }
     if (focusId && !reading(focusId)) focusId = '';   // a reading that no longer exists
     render();
-  } catch {}
+  } catch (e) {
+    // A swallowed render error leaves a blank board with no clue why, which is a long
+    // hunt. Network blips are expected and silent; anything else is said out loud once.
+    if (!(e instanceof TypeError && /fetch/i.test(e.message))) {
+      if (!window.__said) { window.__said = true; console.error('patterns page: ' + e.message, e); }
+    }
+  }
 }
 poll();
 setInterval(poll, 1000);

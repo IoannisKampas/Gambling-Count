@@ -6,6 +6,7 @@ import {
 } from '../src/alerts.mjs';
 import { Telegram } from '../src/telegram.mjs';
 import { AlertSelection } from '../src/selection.mjs';
+import { AlertLog } from '../src/alert-log.mjs';
 import { READINGS } from '../src/patterns.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -27,7 +28,13 @@ const row = (counts, { id = 't1', name = 'Greek Roulette', desynced = false, obs
     spinsObserved: observed, lastEvent: 'NONE',
   }])),
 });
-const opts = { depth: 4, readings: READINGS };
+// The mechanics sections (latching, desync, selection, message layout) are about the
+// machinery, not the thresholds, so they pin every reading to -4. The real per-reading
+// depths have their own section below.
+const FLAT = Object.fromEntries(READINGS.map((r) => [r.id, 4]));
+const opts = { depth: 4, readings: READINGS, depths: FLAT };
+// the thresholds as the readings themselves declare them
+const realOpts = { depth: 4, readings: READINGS };
 
 section('what must stay silent');
 {
@@ -105,9 +112,11 @@ section('configuration');
     'only: restricts alerting to the chosen readings (PATTERNS.md §8.5)');
 }
 {
+  // the global depth applies to any reading that declares none of its own
+  const shallow = { depth: 2, readings: READINGS, depths: { monada: 2 } };
   const st = createAlertState();
-  scan(st, [row({})], { ...opts, depth: 2 });
-  ok(scan(st, [row({ monada: -2 })], { ...opts, depth: 2 }).length === 1, 'depth is configurable');
+  scan(st, [row({})], shallow);
+  ok(scan(st, [row({ monada: -2 })], shallow).length === 1, 'depth is configurable');
 }
 
 section('only the selected tables push');
@@ -134,6 +143,101 @@ section('only the selected tables push');
   scan(st, [row({ monada: 0 })], opts);
   ok(scan(st, [row({ monada: -4 })], { ...opts, onlyTables: null }).length === 1,
     'onlyTables null means every table, as before');
+}
+
+section('every reading pushes at its own depth');
+{
+  // The thresholds as specified. A table here rather than a loop over READINGS on
+  // purpose: a typo in the rules should fail this, not be mirrored by it.
+  const WANT = {
+    allin1: 11, allin2: 11,
+    monada: 12, monada2: 12,
+    diada: 10, diada2: 10,
+    triada: 8, triada2: 8,
+    enaduo: 6, enaduo2: 6,
+    serie1: 11, serie2: 11,
+    andreas: 8,
+  };
+  for (const [id, depth] of Object.entries(WANT)) {
+    const r = READINGS.find((x) => x.id === id);
+    ok(r && r.alertDepth === depth, id + ' pushes at −' + depth,
+      'got ' + (r ? r.alertDepth : 'missing'));
+  }
+  // and each one fires exactly at its own depth, not one short of it
+  for (const [id, depth] of Object.entries(WANT)) {
+    const st = createAlertState();
+    scan(st, [row({ [id]: -(depth - 2) })], realOpts);
+    const early = scan(st, [row({ [id]: -(depth - 1) })], realOpts);
+    ok(early.length === 0, id + ' stays quiet at −' + (depth - 1), JSON.stringify(early.map((h) => h.count)));
+    const hit = scan(st, [row({ [id]: -depth })], realOpts);
+    ok(hit.length === 1 && hit[0].count === -depth, id + ' fires at −' + depth,
+      JSON.stringify(hit.map((h) => h.count)));
+  }
+}
+
+section('a reading can set its own push depth');
+{
+  // Andreas Deluxe moves constantly - a miss is 22/37 - so it must not push at the
+  // global −4, or anywhere above its own much deeper threshold.
+  const st = createAlertState();
+  scan(st, [row({ andreas: -3 })], realOpts);
+  ok(scan(st, [row({ andreas: -4 })], realOpts).length === 0,
+    'Andreas Deluxe stays quiet at −4');
+  ok(scan(st, [row({ andreas: -7 })], realOpts).length === 0, 'and at −7');
+  const deep = scan(st, [row({ andreas: -8 })], realOpts);
+  ok(deep.length === 1 && deep[0].label === 'Andreas Deluxe', 'and pushes at −8',
+    JSON.stringify(deep.map((h) => h.label)));
+  // a run reading keeps its own, much deeper threshold
+  const st2 = createAlertState();
+  scan(st2, [row({ monada: -11 })], realOpts);
+  ok(scan(st2, [row({ monada: -12 })], realOpts).length === 1, 'Monada pushes at −12');
+
+  // ALERT_DEPTHS overrides both the reading's own default and the global one
+  const st3 = createAlertState();
+  const tuned = { ...realOpts, depths: { andreas: 12, monada: 2 } };
+  scan(st3, [row({ andreas: -9, monada: -1 })], tuned);
+  ok(scan(st3, [row({ andreas: -11, monada: -1 })], tuned).length === 0,
+    'a per-reading override can make Andreas quieter than its own default');
+  const louder = scan(st3, [row({ andreas: -12, monada: -2 })], tuned);
+  ok(louder.length === 2, 'and another reading louder', JSON.stringify(louder.map((h) => h.label)));
+}
+{
+  // its message speaks in group-C terms, not A/B
+  const r = READINGS.find((x) => x.id === 'andreas');
+  const block = formatAlertBlock({
+    table: 'Greek Roulette', provider: 'pragmatic', label: r.label, rule: r,
+    count: -5, previous: -4, spins: [12, 7, 1, 4, 18], armed: false,
+  });
+  ok(block.startsWith('🟣'), 'it is marked with the group-C colour', block.split('\n')[0]);
+  ok(block.includes('⚪12') && block.includes('🟣10') === false,
+    'non-members are marked as misses', block.split('\n')[2]);
+  const withHit = formatAlertBlock({
+    table: 'T', label: r.label, rule: r, count: -5, spins: [0, 1], armed: false,
+  });
+  ok(withHit.includes('🟣0') && withHit.includes('⚪1'), 'and members as hits',
+    withHit.split('\n')[2]);
+}
+{
+  // a message mixing thresholds states the shallowest one rather than claiming one depth
+  const andreas = READINGS.find((x) => x.id === 'andreas');
+  const monada = READINGS.find((x) => x.id === 'monada');
+  const head = formatBatch([
+    { table: 'T', label: 'Monada', rule: monada, count: -4, spins: [1] },
+    { table: 'U', label: 'Andreas Deluxe', rule: andreas, count: -5, spins: [1] },
+  ], 4, { tz: 'UTC' }).split('\n')[0];
+  ok(head.includes('−8'), 'the header quotes the shallowest threshold in the batch', head);
+
+  // and it follows the threshold actually in force, not the reading's default: an
+  // ALERT_DEPTHS override was being reported with the wrong number in the message
+  const st = createAlertState();
+  const tuned = { ...realOpts, depths: { andreas: 3 } };
+  scan(st, [row({ andreas: -1 })], tuned);
+  const hit = scan(st, [row({ andreas: -3 })], tuned);
+  ok(hit.length === 1 && hit[0].depth === 3, 'an alert carries the depth that fired it',
+    JSON.stringify(hit.map((h) => h.depth)));
+  ok(formatBatch(hit, 4, { tz: 'UTC' }).startsWith('🎯 <b>−3 or deeper</b>'),
+    'and the header says −3, not the reading’s own −8',
+    formatBatch(hit, 4, { tz: 'UTC' }).split('\n')[0]);
 }
 
 section('the selection survives a restart');
@@ -206,7 +310,9 @@ const alert = (o = {}) => ({
 }
 {
   const one = formatBatch([alert()], 4, { tz: 'UTC' });
-  ok(one.startsWith('🎯 <b>−4 or deeper</b>'), 'the header states the threshold', one.split('\n')[0]);
+  // Monada carries its own −12, and the header states the depth that actually applies
+  ok(one.startsWith('🎯 <b>−12 or deeper</b>'), 'the header states that reading’s threshold',
+    one.split('\n')[0]);
   ok(!one.includes('tables'), 'a single alert does not say "1 tables"');
   const three = formatBatch([alert(), alert(), alert()], 4, { tz: 'UTC' });
   ok(three.includes('3 tables'), 'several alerts are counted in the header');
@@ -355,6 +461,62 @@ const quiet = { info() {}, warn() {}, error() {} };
   ok(/TELEGRAM_BOT_TOKEN/.test(msg), 'sending while unconfigured says what is missing', msg);
   tg.enqueue(['x']);
   ok(tg.pending.length === 0, 'enqueue is a no-op while unconfigured');
+}
+
+section('the log of what was pushed');
+{
+  const log = new AlertLog({ limit: 5 });
+  const mk = (id, count) => ({
+    tableId: 't' + id, table: 'Table ' + id, provider: 'pragmatic', reading: 'monada',
+    label: 'Monada', rule: READINGS.find((r) => r.id === 'monada'), count, previous: count + 1,
+    spins: [1, 2, 3],
+  });
+  const rows = log.add([mk(1, -12), mk(2, -13)]);
+  ok(rows.length === 2 && rows.every((r) => r.status === 'queued'), 'alerts start queued');
+  ok(rows[0].depth === 12, 'the threshold that fired is recorded', String(rows[0].depth));
+  ok(log.stats().held === 2, 'and are counted as waiting', JSON.stringify(log.stats()));
+
+  log.sent(rows, 'the message text');
+  ok(rows.every((r) => r.status === 'sent' && r.text === 'the message text' && r.sentAt),
+    'sending marks them with the text that went out');
+  ok(log.stats().sent === 2 && log.stats().held === 0, 'and they stop waiting',
+    JSON.stringify(log.stats()));
+
+  // a failure is not final: the queue retries, so the row stays queued with the reason
+  const more = log.add([mk(3, -12)]);
+  log.failed(more, 'Unauthorized');
+  ok(more[0].status === 'queued' && more[0].error === 'Unauthorized',
+    'a failure records the reason and keeps the row queued', more[0].status);
+  // dropped is the one case where it really never arrived
+  log.dropped(more);
+  ok(more[0].status === 'dropped' && log.stats().dropped === 1, 'dropping is recorded as such');
+
+  // the log is a window, not a ledger
+  for (let i = 0; i < 10; i++) log.add([mk(10 + i, -12)]);
+  ok(log.list(100).length === 5, 'it keeps only the most recent entries', String(log.list(100).length));
+  ok(log.list(100)[0].table === 'Table 19', 'newest first', log.list(100)[0].table);
+  ok(log.list(2).length === 2, 'and honours a limit');
+}
+{
+  // the queue tells the log what happened, including which alerts it dropped
+  const { fetchImpl } = fakeApi({ chatNotFound: true });
+  const seen = { sent: 0, failed: 0, dropped: 0 };
+  const tg = new Telegram({
+    token: 't', chatId: '-1', log: quiet, fetchImpl, flushMs: 60000,
+    onSent: (items) => { seen.sent += items.length; },
+    onFailed: (items) => { seen.failed += items.length; },
+    onDropped: (items) => { seen.dropped += items.length; },
+  });
+  tg.enqueue(['a']);
+  await tg.flush();
+  ok(seen.failed === 1 && seen.sent === 0, 'a failure is reported', JSON.stringify(seen));
+  tg.enqueue(Array.from({ length: 250 }, (_, i) => 'x' + i));
+  ok(seen.dropped === 51, 'and so is every alert the queue had to drop', JSON.stringify(seen));
+
+  const ok2 = fakeApi();
+  tg.fetch = ok2.fetchImpl;
+  await tg.flush();
+  ok(seen.sent === 12, 'a successful batch reports exactly what went out', JSON.stringify(seen));
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

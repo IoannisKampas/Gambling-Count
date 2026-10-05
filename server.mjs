@@ -13,10 +13,11 @@ import { fileURLToPath } from 'node:url';
 import { MultiFeed, MAX_CONCURRENT } from './src/multifeed.mjs';
 import { DgaLobby, mergeResults } from './src/dga.mjs';
 import { PlaytechLobby, isRoulette as isPtRoulette } from './src/playtech.mjs';
-import { PatternTracker, GROUP_A, GROUP_B, READINGS, READING_IDS } from './src/patterns.mjs';
+import { PatternTracker, GROUP_A, GROUP_B, GROUP_C, READINGS, READING_IDS } from './src/patterns.mjs';
 import { Telegram } from './src/telegram.mjs';
 import * as alerts from './src/alerts.mjs';
 import { AlertSelection } from './src/selection.mjs';
+import { AlertLog } from './src/alert-log.mjs';
 import { SessionProvider } from './src/session.mjs';
 import { proxySummary } from './src/chrome.mjs';
 import * as operators from './src/operators.mjs';
@@ -49,6 +50,13 @@ const ALERT_READINGS = (process.env.ALERT_READINGS || '').split(',').map((s) => 
 // Tables chosen in the UI (data/alerts.json). ALERT_TABLES adds more by id or by name,
 // for a host configured without touching a browser; ALERT_ALL=1 pushes every table,
 // which is what this did before the selection existed.
+// Per-reading thresholds, e.g. ALERT_DEPTHS='andreas=6,monada=5'. A reading may also
+// carry its own default (Andreas Deluxe does, at −5, being a far more frequent pattern
+// than any run reading); this overrides both that and ALERT_DEPTH.
+const ALERT_DEPTHS = Object.fromEntries((process.env.ALERT_DEPTHS || '').split(',')
+  .map((s) => s.split('=').map((x) => x.trim()))
+  .filter(([id, n]) => id && Number(n) > 0)
+  .map(([id, n]) => [id, Number(n)]));
 const ALERT_TABLES = (process.env.ALERT_TABLES || '').split(',').map((s) => s.trim()).filter(Boolean);
 const ALERT_ALL = process.env.ALERT_ALL === '1';
 
@@ -516,6 +524,12 @@ const server = http.createServer(async (req, res) => {
     return res.end(html);
   }
 
+  if (url.pathname === '/alerts') {
+    const html = fs.readFileSync(path.join(ROOT, 'public/alerts.html'));
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    return res.end(html);
+  }
+
   if (url.pathname === '/patterns') {
     const html = fs.readFileSync(path.join(ROOT, 'public/patterns.html'));
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -676,7 +690,7 @@ function rouletteTables(want) {
 }
 
 // ------------------------------------------------------------------- patterns ----
-// PATTERNS.md. All ten readings are advanced from the same loop, over the same spins,
+// PATTERNS.md + addendum 1. All fourteen readings are advanced from the same loop, over the same spins,
 // in the same order (§8.5) - a second history fetch would eventually disagree with
 // itself. Only All in 1 is the alerting reading, per §8.5; the rest are counted and
 // shown but never notify.
@@ -684,10 +698,20 @@ const patterns = new PatternTracker();
 
 // Push notifications for deep counts. The latch that stops replayed history being
 // announced lives in src/alerts.mjs; the queueing and rate limiting in src/telegram.mjs.
+// What was pushed, for the /alerts page. The alert objects are the keys: a WeakMap keeps
+// the log rows out of the queue itself, so nothing here holds an alert alive after it has
+// been sent.
+const alertLog = new AlertLog();
+const logRowOf = new WeakMap();
+const rowsFor = (items) => (items || []).map((i) => logRowOf.get(i)).filter(Boolean);
+
 const telegram = new Telegram({
   token: process.env.TELEGRAM_BOT_TOKEN,
   chatId: process.env.TELEGRAM_CHAT_ID,
   depth: ALERT_DEPTH,
+  onSent: (items, text) => alertLog.sent(rowsFor(items), text),
+  onFailed: (items, why) => alertLog.failed(rowsFor(items), why),
+  onDropped: (items) => alertLog.dropped(rowsFor(items)),
   // timestamps are for whoever reads the group, so they are in their clock, not UTC
   tz: process.env.ALERT_TZ || 'Europe/Athens',
   link: process.env.ALERT_LINK || '',   // optional dashboard URL, appended to a push
@@ -732,6 +756,7 @@ function patternTick() {
     readings: READINGS,
     only: ALERT_READINGS.length ? ALERT_READINGS : null,
     onlyTables: allowed,
+    depths: ALERT_DEPTHS,
   });
   if (!hits.length) return;
   for (const h of hits) {
@@ -740,6 +765,8 @@ function patternTick() {
   }
   // the alerts go on the queue as objects: the message is laid out at send time, when
   // it is known how many are going into it
+  const logRows = alertLog.add(hits, ALERT_DEPTHS);
+  hits.forEach((h, i) => logRowOf.set(h, logRows[i]));
   telegram.enqueue(hits);
 }
 
@@ -782,15 +809,37 @@ async function routeRest(req, res, url) {
   if (url.pathname === '/api/patterns') {
     return json(res, 200, {
       tables: patternRows(url.searchParams.get('operator')),
-      groups: { A: GROUP_A, B: GROUP_B },
-      // the ten readings and their rules, so the page never restates the spec
+      groups: { A: GROUP_A, B: GROUP_B, C: GROUP_C },
+      // every reading and its rules, so the page never restates the spec
       readings: READINGS,
       alerting: 'allin1',                 // PATTERNS.md §8.5 - one reading alerts
       push: { ...telegram.status(), depth: ALERT_DEPTH,
+        // the threshold in force per reading, so the page never has to work it out
+        depths: Object.fromEntries(READINGS.map((r) =>
+          [r.id, ALERT_DEPTHS[r.id] || r.alertDepth || ALERT_DEPTH])),
         readings: ALERT_READINGS.length ? ALERT_READINGS : 'all',
         tables: alertTables.list(),       // the UI draws a bell per table from this
         all: ALERT_ALL,
         fromEnv: ALERT_TABLES },
+      at: Date.now(),
+    });
+  }
+
+  // What has been pushed to the group, and what is stuck in the queue. The group chat is
+  // the real record; this is what the app can show about it.
+  if (url.pathname === '/api/alerts/log') {
+    const limit = Math.min(300, Number(url.searchParams.get('limit')) || 100);
+    const depths = {};
+    for (const r of READINGS) depths[r.id] = ALERT_DEPTHS[r.id] || r.alertDepth || ALERT_DEPTH;
+    return json(res, 200, {
+      entries: alertLog.list(limit),
+      stats: alertLog.stats(),
+      telegram: telegram.status(),
+      readings: READINGS,
+      depths,
+      armed: alertTables.list(),
+      all: ALERT_ALL,
+      tz: process.env.ALERT_TZ || 'Europe/Athens',
       at: Date.now(),
     });
   }
@@ -1051,9 +1100,19 @@ server.listen(PORT, HOST, async () => {
         ? alertTables.size + ' selected table' + (alertTables.size === 1 ? '' : 's') +
           (ALERT_TABLES.length ? ' + ' + ALERT_TABLES.length + ' from ALERT_TABLES' : '')
         : 'NO tables selected yet - pick them with the bell on /patterns';
-    log.info('telegram alerts on: −' + ALERT_DEPTH + ' or deeper, ' +
-      (ALERT_READINGS.length ? ALERT_READINGS.join('/') : 'all ten readings') +
+    log.info('telegram alerts on: ' +
+      (ALERT_READINGS.length ? ALERT_READINGS.join('/') : 'all ' + READINGS.length + ' readings') +
       ', ' + scope + ', chat ' + process.env.TELEGRAM_CHAT_ID);
+    // Each reading has its own threshold, so print them grouped by depth rather than
+    // quoting one number that is true of almost none of them.
+    const byDepth = new Map();
+    for (const r of READINGS) {
+      const d = ALERT_DEPTHS[r.id] || r.alertDepth || ALERT_DEPTH;
+      if (!byDepth.has(d)) byDepth.set(d, []);
+      byDepth.get(d).push(r.label);
+    }
+    log.info('push depths: ' + [...byDepth.entries()].sort((a, b) => b[0] - a[0])
+      .map(([d, labels]) => '−' + d + ' ' + labels.join(', ')).join('  ·  '));
   }
 
   // Restore every operator session persisted from a previous run, so a restart comes

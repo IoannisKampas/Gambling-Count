@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Telegram Alerts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600&family=Barlow:wght@400;500&family=JetBrains+Mono:wght@500;700&display=swap">
+<link rel="stylesheet" href="/shell.css">
+<style>
+:root{
+  --bg:#0d0d0d; --surface:#1a1a19; --surface-sunk:#151514; --surface-raised:#222220;
+  --border:#2c2c2a; --border-hover:#3d3d3a; --divider:#242422; --row-hover:#212120;
+  --ink:#ffffff; --ink-title:#ffffff; --ink-2:#c3c2b7; --ink-dim:#898781; --ink-fainter:#6f6e69;
+  --group-a:#3987e5; --group-b:#d95926; --group-c:#a855f7;
+  --ok:#0ca30c; --warn:#fab219; --bad:#d03b3b;
+  --brand:#3987e5; --brand-surface:#16304f; --brand-ink:#8fbdf2; --btn-border:#33332f;
+  --f-cond:'Barlow Condensed','Arial Narrow',sans-serif;
+  --f-body:'Barlow',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --f-mono:'JetBrains Mono','SFMono-Regular',Consolas,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);min-height:100vh;color:var(--ink);font:400 13px/1.5 var(--f-body);
+  -webkit-font-smoothing:antialiased}
+
+header{position:sticky;top:0;z-index:20;backdrop-filter:blur(12px);
+  background:color-mix(in srgb,var(--bg) 92%,transparent);border-bottom:1px solid var(--border);
+  padding:12px 20px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.logo{width:24px;height:32px;border-radius:5px;background:var(--brand-surface);
+  border:1px solid var(--brand);display:grid;place-items:center;flex:none;
+  font-family:var(--f-mono);font-weight:700;font-size:12px;color:var(--brand-ink)}
+h1{margin:0;font-family:var(--f-cond);font-weight:600;font-size:19px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-title);white-space:nowrap}
+.tally{font-family:var(--f-mono);font-weight:500;font-size:10px;letter-spacing:.1em;
+  color:var(--ink-fainter)}
+.spacer{flex:1 1 auto}
+select,input[type=search]{font:400 12px var(--f-body);padding:8px 10px;border-radius:6px;
+  border:1px solid var(--border);background:var(--surface-raised);color:var(--ink-2)}
+button{font:500 11px/1 var(--f-mono);letter-spacing:.1em;text-transform:uppercase;cursor:pointer;
+  border-radius:6px;border:1px solid var(--btn-border);background:var(--surface-raised);
+  color:var(--ink-dim);padding:8px 11px}
+button:hover{border-color:var(--border-hover);color:var(--ink)}
+button.on{border-color:var(--brand);background:var(--brand-surface);color:var(--brand-ink)}
+
+section{padding:18px 20px 4px}
+.shead{display:flex;align-items:center;gap:12px;margin:0 0 12px}
+.shead h2{margin:0;font-family:var(--f-cond);font-weight:600;font-size:12px;letter-spacing:.28em;
+  text-transform:uppercase;color:var(--brand-ink)}
+.shead .rule{flex:1 1 auto;height:1px;background:linear-gradient(90deg,var(--border),transparent)}
+.shead .meta{font-family:var(--f-mono);font-weight:500;font-size:9px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-fainter)}
+
+/* the state of the pipe itself */
+.cards{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:16px}
+.stat{background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:10px 12px}
+.stat .k{font-family:var(--f-mono);font-weight:500;font-size:8.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-fainter)}
+.stat .v{font-family:var(--f-mono);font-weight:700;font-size:21px;line-height:1.2;margin-top:2px}
+.stat .v.good{color:var(--ok)} .stat .v.warn{color:var(--warn)} .stat .v.bad{color:var(--bad)}
+.stat .sub{font-family:var(--f-mono);font-size:9px;color:var(--ink-fainter)}
+
+table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--border);
+  border-radius:10px;overflow:hidden}
+th{font-family:var(--f-mono);font-weight:500;font-size:8.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-fainter);text-align:left;padding:9px 10px;
+  border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid var(--divider);vertical-align:top}
+tr:last-child td{border-bottom:none}
+tbody tr:hover{background:var(--row-hover)}
+.t{font-family:var(--f-mono);font-size:11px;color:var(--ink-dim);white-space:nowrap}
+.rd{font-family:var(--f-mono);font-weight:700;font-size:11px;white-space:nowrap}
+.rd.gA{color:color-mix(in srgb,var(--group-a) 80%,#fff)}
+.rd.gB{color:color-mix(in srgb,var(--group-b) 80%,#fff)}
+.rd.gC{color:color-mix(in srgb,var(--group-c) 80%,#fff)}
+.cnt{font-family:var(--f-mono);font-weight:700;font-size:15px;white-space:nowrap}
+.cnt.d2{color:var(--warn)} .cnt.d4{color:var(--bad)}
+.tb{font-family:var(--f-cond);font-weight:600;font-size:14px;letter-spacing:.04em;
+  text-transform:uppercase}
+.sp{display:inline-flex;align-items:center;justify-content:center;min-width:19px;height:19px;
+  padding:0 4px;border-radius:3px;font-family:var(--f-mono);font-weight:700;font-size:9.5px;
+  color:#fff;margin-right:2px}
+.sp.A{background:var(--group-a)} .sp.B{background:var(--group-b)}
+.sp.C{background:var(--group-c)} .sp.notC{background:var(--surface-raised);color:var(--ink-dim)}
+.st{font-family:var(--f-mono);font-weight:700;font-size:8px;letter-spacing:.12em;
+  text-transform:uppercase;padding:3px 6px;border-radius:3px;white-space:nowrap}
+.st.sent{background:#10300f;color:#6fd16f}
+.st.queued{background:#3a2f10;color:var(--warn)}
+.st.dropped{background:#3a1717;color:#f0a3a3}
+.err{font-family:var(--f-mono);font-size:9px;color:#f0a3a3;margin-top:3px}
+
+details{margin-top:14px}
+summary{cursor:pointer;font-family:var(--f-mono);font-size:10px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink-fainter);padding:6px 0}
+summary:hover{color:var(--ink)}
+pre{background:var(--surface-sunk);border:1px solid var(--border);border-radius:8px;
+  padding:12px;overflow:auto;font-family:var(--f-mono);font-size:11px;color:var(--ink-2);
+  white-space:pre-wrap;margin:6px 0 0}
+.empty{font-family:var(--f-mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-fainter);text-align:center;padding:40px 0}
+footer{padding:20px;font-family:var(--f-mono);font-size:9px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink-fainter)}
+.thresholds{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 14px}
+.thr{font-family:var(--f-mono);font-size:9px;letter-spacing:.08em;padding:4px 7px;border-radius:4px;
+  background:var(--surface-raised);border:1px solid var(--btn-border);color:var(--ink-dim)}
+.thr b{font-weight:700;color:var(--ink-2)}
+</style>
+</head>
+<body class="app">
+
+<div class="rail">
+  <div class="brand">
+    <span class="mark">A♠</span>
+    <span class="txt">Casino Wall<small>read-only monitor</small></span>
+  </div>
+  <nav>
+    <a class="item" href="/"><span class="ico">▦</span>Blackjack</a>
+    <a class="item" href="/roulette"><span class="ico">◉</span>Roulette</a>
+    <a class="item" href="/patterns"><span class="ico">◈</span>Patterns</a>
+    <a class="item on" href="/alerts"><span class="ico">✉</span>Alerts<span class="badge" id="railal"></span></a>
+    <a class="item" href="/settings"><span class="ico">⚙</span>Settings</a>
+  </nav>
+  <div class="foot"><span id="railstat"><span class="dot"></span>loading…</span></div>
+</div>
+
+<div class="page">
+
+<header>
+  <span class="logo">✉</span>
+  <h1>Telegram Alerts</h1>
+  <span class="tally" id="tally">—</span>
+  <span class="spacer"></span>
+  <input id="q" type="search" placeholder="Search table or reading…">
+  <select id="status">
+    <option value="">Any status</option>
+    <option value="sent">Sent</option>
+    <option value="queued">Queued</option>
+    <option value="dropped">Dropped</option>
+  </select>
+  <button id="pause" title="stop refreshing so a row stays put while you read it">Live</button>
+</header>
+
+<section>
+  <div class="shead"><h2>The pipe</h2><span class="rule"></span>
+    <span class="meta" id="pipemeta"></span></div>
+  <div class="cards" id="cards"></div>
+
+  <div class="shead"><h2>Pushed to the group</h2><span class="rule"></span>
+    <span class="meta" id="logmeta"></span></div>
+  <div class="thresholds" id="thresholds"></div>
+  <table>
+    <thead><tr>
+      <th>Time</th><th>Reading</th><th>Count</th><th>Table</th><th>Spins at the time</th><th>Status</th>
+    </tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <div class="empty" id="empty" hidden>Nothing has been pushed yet</div>
+
+  <details id="lastmsg" hidden>
+    <summary>The last message, exactly as the group received it</summary>
+    <pre id="lasttext"></pre>
+  </details>
+</section>
+
+<footer>History is kept in memory for this run only · the group chat itself is the permanent record</footer>
+
+</div><!-- /page -->
+
+<script>
+const $ = (s) => document.querySelector(s);
+let entries = [], stats = {}, tg = {}, readings = [], depths = {}, tz = 'Europe/Athens';
+let armed = [], pushAll = false, live = true;
+let aSet = new Set(), cSet = new Set();
+
+const PREFS = 'alertpage.prefs';
+function readPrefs(){
+  let p = {}; try { p = JSON.parse(localStorage.getItem(PREFS) || '{}'); } catch {}
+  $('#q').value = p.q || '';
+  $('#status').value = p.status || '';
+}
+function savePrefs(){
+  try { localStorage.setItem(PREFS, JSON.stringify({ q: $('#q').value, status: $('#status').value })); } catch {}
+}
+readPrefs();
+
+const reading = (id) => readings.find((r) => r.id === id) || null;
+const sideCls = (r) => (!r ? '' : r.side === 'A' ? 'gA' : r.side === 'B' ? 'gB' : r.side === 'C' ? 'gC' : '');
+const depthCls = (c) => (c <= -4 ? 'cnt d4' : c <= -2 ? 'cnt d2' : 'cnt');
+const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+const clock = (ms) => {
+  try {
+    return new Intl.DateTimeFormat('en-GB', {
+      hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: tz,
+    }).format(new Date(ms));
+  } catch { return new Date(ms).toISOString().slice(11, 19); }
+};
+const ago = (ms) => {
+  const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+  return s < 60 ? s + 's ago' : s < 3600 ? Math.round(s / 60) + 'm ago' : Math.round(s / 3600) + 'h ago';
+};
+
+// spins are shown exactly as the message showed them: newest first, and marked the way
+// that reading reads them - group C membership for a group-C reading, A/B otherwise
+function spins(e){
+  const r = reading(e.reading);
+  const byC = r && r.kind === 'streak' && r.group === 'C';
+  return (e.spins || []).map((n) =>
+    '<span class="sp ' + (byC ? (cSet.has(n) ? 'C' : 'notC') : (aSet.has(n) ? 'A' : 'B')) + '">' + n + '</span>'
+  ).join('');
+}
+
+function statCards(){
+  const t = tg || {};
+  const s = stats || {};
+  const cards = [
+    ['bot', t.configured ? 'ON' : 'OFF', t.configured ? 'good' : 'bad',
+      t.configured ? 'chat ' + (t.chatId || '?') : 'set TELEGRAM_BOT_TOKEN'],
+    ['messages sent', t.sent || 0, 'good', (t.failed || 0) + ' send failures'],
+    ['alerts pushed', s.sent || 0, 'good', 'last ' + (s.kept || 0) + ' kept'],
+    ['waiting', s.held || 0, (s.held || 0) ? 'warn' : '', (t.queued || 0) + ' in the queue'],
+    ['dropped', s.dropped || 0, (s.dropped || 0) ? 'bad' : '', 'queue never drained'],
+    ['tables armed', pushAll ? 'ALL' : armed.length, armed.length || pushAll ? '' : 'warn',
+      pushAll ? 'ALERT_ALL=1' : 'bell on /patterns'],
+  ];
+  const html = cards.map(([k, v, cls, sub]) =>
+    '<div class="stat"><div class="k">' + k + '</div><div class="v ' + (cls || '') + '">' + v + '</div>' +
+    '<div class="sub">' + esc(sub) + '</div></div>').join('');
+  const el = $('#cards');
+  if (el.__html !== html) { el.innerHTML = html; el.__html = html; }
+
+  $('#pipemeta').textContent = t.throttledFor ? 'throttled for ' + t.throttledFor + 's'
+    : (t.queued || 0) ? (t.queued + ' queued, sending') : 'idle';
+}
+
+function render(){
+  statCards();
+
+  // what each reading pushes at, so a missing alert can be checked against its depth
+  const thr = readings.map((r) =>
+    '<span class="thr ' + '"><b>' + esc(r.label) + '</b> −' + (depths[r.id] || '?') + '</span>').join('');
+  const te = $('#thresholds');
+  if (te.__html !== thr) { te.innerHTML = thr; te.__html = thr; }
+
+  const q = $('#q').value.trim().toLowerCase();
+  const want = $('#status').value;
+  const rows = entries.filter((e) => {
+    if (want && e.status !== want) return false;
+    if (q && !((e.table || '').toLowerCase().includes(q) || (e.label || '').toLowerCase().includes(q))) return false;
+    return true;
+  });
+
+  $('#empty').hidden = rows.length > 0;
+  const html = rows.map((e) => {
+    const r = reading(e.reading);
+    return '<tr>' +
+      '<td class="t">' + clock(e.at) + '<br><span style="opacity:.6">' + ago(e.at) + '</span></td>' +
+      '<td class="rd ' + sideCls(r) + '">' + esc(e.label) +
+        '<br><span style="opacity:.6;font-weight:500">pushes −' + (e.depth || depths[e.reading] || '?') + '</span></td>' +
+      '<td class="' + depthCls(e.count) + '">−' + Math.abs(e.count) +
+        (e.previous ? '<br><span class="t" style="font-size:9px">was −' + Math.abs(e.previous) + '</span>' : '') + '</td>' +
+      '<td><span class="tb">' + esc(e.table) + '</span>' +
+        (e.provider ? '<br><span class="t" style="font-size:9px">' + esc(e.provider) + '</span>' : '') + '</td>' +
+      '<td>' + spins(e) + '</td>' +
+      '<td><span class="st ' + e.status + '">' + e.status + '</span>' +
+        (e.sentAt ? '<div class="t" style="font-size:9px">' + clock(e.sentAt) + '</div>' : '') +
+        (e.error ? '<div class="err">' + esc(e.error) + '</div>' : '') + '</td>' +
+    '</tr>';
+  }).join('');
+  const body = $('#rows');
+  if (body.__html !== html) { body.innerHTML = html; body.__html = html; }
+
+  const sent = entries.filter((e) => e.status === 'sent').length;
+  $('#tally').textContent = entries.length + ' alerts kept · ' + sent + ' sent';
+  $('#logmeta').textContent = rows.length + ' shown' +
+    (entries.length !== rows.length ? ' of ' + entries.length : '');
+  $('#railal').textContent = (stats.held || 0) ? String(stats.held) : '';
+  $('#railstat').innerHTML = '<span class="dot' + (tg.configured ? ' live' : '') + '"></span>' +
+    (tg.configured ? (stats.sent || 0) + ' pushed' : 'push off');
+
+  // the exact text of the most recent message
+  const last = entries.find((e) => e.text);
+  $('#lastmsg').hidden = !last;
+  if (last) {
+    const txt = last.text.replace(/<[^>]+>/g, '');
+    if ($('#lasttext').textContent !== txt) $('#lasttext').textContent = txt;
+  }
+}
+
+for (const id of ['#q', '#status']) {
+  $(id).addEventListener(id === '#q' ? 'input' : 'change', () => { savePrefs(); render(); });
+}
+$('#pause').addEventListener('click', () => {
+  live = !live;
+  $('#pause').textContent = live ? 'Live' : 'Paused';
+  $('#pause').classList.toggle('on', !live);
+});
+
+async function poll(){
+  if (!live) return;
+  try {
+    const j = await (await fetch('/api/alerts/log?limit=300')).json();
+    entries = j.entries || [];
+    stats = j.stats || {};
+    tg = j.telegram || {};
+    readings = j.readings || [];
+    depths = j.depths || {};
+    armed = j.armed || [];
+    pushAll = !!j.all;
+    tz = j.tz || tz;
+    render();
+  } catch (e) {
+    if (!window.__said) { window.__said = true; console.error('alerts page: ' + e.message, e); }
+  }
+}
+
+// group membership, for colouring the spin strips the same way the wall does
+(async () => {
+  try {
+    const j = await (await fetch('/api/patterns')).json();
+    if (j.groups) { aSet = new Set(j.groups.A || []); cSet = new Set(j.groups.C || []); }
+  } catch {}
+  poll();
+  setInterval(poll, 2000);
+})();
+</script>
+</body>
+</html>

@@ -30,7 +30,13 @@ export class Telegram {
     token, chatId, log = console, depth = 4,
     flushMs = 4000, maxPerMinute = 15, fetchImpl = fetch,
     tz = 'Europe/Athens', link = '', format = formatBatch,
+    // Told what actually happened to each alert, so the app can show the group's feed
+    // back to whoever is not holding the phone. All three are optional.
+    onSent = null, onFailed = null, onDropped = null,
   } = {}) {
+    this.onSent = onSent;
+    this.onFailed = onFailed;
+    this.onDropped = onDropped;
     this.tz = tz;
     this.link = link;
     this.format = format;
@@ -70,8 +76,10 @@ export class Telegram {
     this.pending.push(...lines);
     if (this.pending.length > MAX_QUEUE) {
       const lost = this.pending.length - MAX_QUEUE;
+      const gone = this.pending.slice(0, lost);
       this.pending = this.pending.slice(-MAX_QUEUE);
       this.dropped += lost;
+      if (this.onDropped) { try { this.onDropped(gone); } catch {} }
       this.log.warn('telegram: dropped ' + lost + ' stale alert' + (lost === 1 ? '' : 's') +
         ' (' + this.dropped + ' total) - the queue is not draining');
     }
@@ -116,6 +124,7 @@ export class Telegram {
       this.backoffMs = 0;
       this.log.info('telegram: pushed ' + batch.length + ' alert' + (batch.length === 1 ? '' : 's') +
         (this.pending.length ? ', ' + this.pending.length + ' queued' : ''));
+      if (this.onSent) { try { this.onSent(batch, text); } catch {} }
     } catch (e) {
       this.failed += 1;
       this.streak += 1;
@@ -127,6 +136,7 @@ export class Telegram {
       delay = this.backoffMs;
       this.log.warn('telegram: ' + e.message + ' (' + this.pending.length + ' queued, retrying in ' +
         Math.round(delay / 1000) + 's)');
+      if (this.onFailed) { try { this.onFailed(batch, e.message); } catch {} }
     }
     if (this.pending.length) this.#schedule(delay);
   }

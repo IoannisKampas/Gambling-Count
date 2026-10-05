@@ -189,7 +189,10 @@ messages: BotFather → `/mybots` → the bot → Bot Settings → Group Privacy
 | `TELEGRAM_BOT_TOKEN` | the bot token. Belongs in `/etc/bj-monitor.env` (0600), never in the unit file |
 | `TELEGRAM_CHAT_ID` | the group id, negative for groups |
 | `ALERT_DEPTH` | alert at this depth or deeper. Default `4`, i.e. −4 |
-| `ALERT_READINGS` | comma-separated reading ids to alert on; unset means all ten |
+| `ALERT_READINGS` | comma-separated reading ids to alert on; unset means every reading |
+| `ALERT_DEPTHS` | per-reading thresholds, e.g. `andreas=6,monada=5`; overrides both the reading's own default and `ALERT_DEPTH` |
+| `ALERT_TABLES` | extra tables by id or name, for a host set up without a browser |
+| `ALERT_ALL` | `1` pushes from every table, ignoring the selection |
 
 Two behaviours worth knowing, both deliberate:
 
@@ -198,13 +201,31 @@ Two behaviours worth knowing, both deliberate:
   from a live spin that deepens the count — not from spins somebody else watched. The
   same applies after a desync, whose counts are discarded rather than announced (§8.2).
 - **Alerts are coalesced.** A group accepts roughly 20 messages a minute, and a deep run
-  across 33 tables × 10 readings can produce a burst, so alerts are queued and sent as
+  across 33 tables × 14 readings can produce a burst, so alerts are queued and sent as
   one message every few seconds, metered under the limit. A failure backs off (doubling
   to a minute) and keeps the alerts; a queue that never drains is capped at 200, newest
   kept.
 
 `PATTERNS.md §8.5` recommends letting only one reading alert — `ALERT_READINGS=allin1`
-does that if ten readings turn out to be too noisy.
+does that if fifteen readings turn out to be too noisy.
+
+**Seeing what was sent.** `/alerts` in the app lists every push this run made: time,
+reading, count, table, the spins at the time, and whether it was sent, is still queued,
+or was dropped. It also shows the last message exactly as the group received it, and the
+threshold each reading is pushing at. The history is in memory for the run only - the
+group chat remains the permanent record.
+
+**Which tables push.** Nothing is pushed until tables are armed with the 🔔 on `/patterns`
+(saved in `data/alerts.json`, so it survives restarts and needs no browser open). The
+Settings page's table picks are browser-side only; "🔔 Arm shown" is how they reach the
+server — filter the board, then arm what is left.
+
+**Andreas Deluxe is far noisier than the rest, by nature.** Group C holds 15 of 37
+pockets, so a miss is 22/37 ≈ 59% likely: the count sits at −5 or deeper on ≈7.4% of
+spins and arrives at exactly −5 on ≈3.0% of them. On a table turning a spin a minute
+that is roughly one push every half hour *per armed table* — against hours or days
+between pushes for Tetrada or Pentada. It therefore carries its own threshold of −8
+rather than the global −4, and `ALERT_DEPTHS='andreas=10'` quietens it further.
 
 ---
 

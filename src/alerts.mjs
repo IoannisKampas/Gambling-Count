@@ -18,11 +18,11 @@
 //         real counts, so they are re-baselined silently and never alerted on.
 //
 // PATTERNS.md §8.5 recommends letting only ONE reading alert (All in 1), on the grounds
-// that ten readings alerting on the same table at different moments is noise. This
+// that every reading alerting on the same table at different moments is noise. This
 // module can do either: `only` restricts it to a set of readings, and the default is
 // every reading, which is what the operator of this app asked for.
 
-import { groupOf } from './patterns.mjs';
+import { groupOf, inGroup } from './patterns.mjs';
 
 export const DEFAULT_DEPTH = 4;
 
@@ -38,14 +38,14 @@ const keyOf = (tableId, readingId) => tableId + '|' + readingId;
 //            reads: { <readingId>: { count, phase, spinsObserved, … } } }
 //   depth    alert at this depth or deeper, as a positive number (4 means −4)
 //   readings the READINGS metadata, carried into each alert for the message text
-//   only     Set/array of reading ids to alert on, or null for all ten
+//   only     Set/array of reading ids to alert on, or null for every reading
 //   onlyTables  Set/array of table ids that may push, or null for every table
 //
 // A table outside `onlyTables` is skipped entirely rather than tracked-but-muted, so
 // selecting one later starts it latched like any newly seen table (§8.3) - you get its
 // next live deepening, never a backlog of counts from while it was off.
 export function scan(state, tables, {
-  depth = DEFAULT_DEPTH, readings = [], only = null, onlyTables = null,
+  depth = DEFAULT_DEPTH, readings = [], only = null, onlyTables = null, depths = null,
 } = {}) {
   const want = only ? new Set(only) : null;
   const wantTables = onlyTables ? new Set(onlyTables) : null;
@@ -70,8 +70,13 @@ export function scan(state, tables, {
       // nothing has been watched live yet, so nothing here was earned in front of us
       if (!p.spinsObserved) { state.set(key, count); continue; }
 
-      if (count <= -depth && count < prev) {
-        const rule = byId.get(id) || null;
+      // A reading may set its own threshold. Group C turns up on 15 of 37 pockets, so
+      // Andreas Deluxe reaches −4 far more often than any run reading does; comparing
+      // the two at one depth would drown the rest.
+      const rule = byId.get(id) || null;
+      const limit = (depths && depths[id]) || (rule && rule.alertDepth) || depth;
+
+      if (count <= -limit && count < prev) {
         alerts.push({
           tableId: t.id,
           table: t.name,
@@ -79,6 +84,7 @@ export function scan(state, tables, {
           reading: id,
           label: (rule && rule.label) || id,
           rule,
+          depth: limit,          // the threshold actually in force, overrides included
           count,
           previous: prev,
           spins: (t.spins || []).slice(0, 8),   // newest first, as the feed delivers
@@ -107,36 +113,48 @@ const esc = (s) => String(s == null ? '' : s)
 // same two colours carry into the message, so a spin strip reads the same on a phone
 // as on the wall. The number is always shown as well, so nothing rests on colour.
 const DOT = { A: '🔵', B: '🟠' };
+// A group-C reading is about one membership that cuts across A and B, so its strip is
+// marked by that instead: in the group, or not. A/B colours would say nothing about why
+// that count moved. Serie 1 and 2 are group A and B themselves, so they keep the usual
+// colours and need no special case.
+const IN = '🟣', OUT = '⚪';
 
 // Newest first, left to right - the order the feed delivers them and the order the wall
 // shows them. Reversing it here read as the more natural direction for a pattern but
 // made the two disagree, which is worse: the number everyone looks for first is the spin
 // that just landed, and it belongs at the front.
-export function spinStrip(spins = []) {
+export function spinStrip(spins = [], rule = null) {
+  const byMembership = !!rule && rule.kind === 'streak' && rule.group === 'C';
   return spins.map((n) => {
-    try { return DOT[groupOf(n)] + n; } catch { return String(n); }
+    try {
+      return byMembership ? (inGroup(rule.group, n) ? IN : OUT) + n : DOT[groupOf(n)] + n;
+    } catch { return String(n); }
   }).join(' ');
 }
 
 // One alert, as a small block: reading and depth, the table, the spins.
 export function formatAlertBlock(a) {
-  const side = a.rule && a.rule.side;
-  const dot = side === 'A' ? DOT.A : side === 'B' ? DOT.B : '⚪';
   const lines = [
-    dot + ' <b>' + esc(a.label) + '</b>   <b>−' + Math.abs(a.count) + '</b>',
+    mark(a) + ' <b>' + esc(a.label) + '</b>   <b>−' + Math.abs(a.count) + '</b>',
     '<b>' + esc(a.table) + '</b>' + (a.provider ? '  ·  ' + esc(a.provider) : ''),
   ];
-  if (a.spins && a.spins.length) lines.push(spinStrip(a.spins));
+  if (a.spins && a.spins.length) lines.push(spinStrip(a.spins, a.rule));
   if (a.armed) lines.push('⏳ next spin decides');
   return lines.join('\n');
 }
 
+// the reading's own marker: its group colour, or the membership marker for a group-C
+// reading, so the strip below it reads in the same terms
+function mark(a) {
+  const rule = a.rule || {};
+  if (rule.kind === 'streak' && rule.group === 'C') return IN;
+  return rule.side === 'A' ? DOT.A : rule.side === 'B' ? DOT.B : '⚪';
+}
+
 // One alert on a single line, for when a burst would otherwise be a wall of text.
 export function formatAlertLine(a) {
-  const side = a.rule && a.rule.side;
-  const dot = side === 'A' ? DOT.A : side === 'B' ? DOT.B : '⚪';
-  return dot + ' <b>' + esc(a.label) + ' −' + Math.abs(a.count) + '</b> · ' + esc(a.table) +
-    (a.spins && a.spins.length ? ' · ' + spinStrip(a.spins.slice(0, 6)) : '');
+  return mark(a) + ' <b>' + esc(a.label) + ' −' + Math.abs(a.count) + '</b> · ' + esc(a.table) +
+    (a.spins && a.spins.length ? ' · ' + spinStrip(a.spins.slice(0, 6), a.rule) : '');
 }
 
 // Kept for the one-line log/plain-text use and for anything already holding strings.
@@ -161,7 +179,11 @@ export function formatBatch(items, depth = DEFAULT_DEPTH, { tz = 'Europe/Athens'
   const objects = items.filter((i) => typeof i !== 'string');
   const strings = items.filter((i) => typeof i === 'string');
   const at = clock(tz);
-  const head = '🎯 <b>−' + depth + ' or deeper</b>' +
+  // readings can carry their own threshold, so the header states the shallowest one in
+  // this message rather than claiming a single global depth
+  const depths = objects.map((o) => o.depth || (o.rule && o.rule.alertDepth) || depth);
+  const shallowest = depths.length ? Math.min(...depths) : depth;
+  const head = '🎯 <b>−' + shallowest + ' or deeper</b>' +
     (items.length > 1 ? '  ·  ' + items.length + ' tables' : '') +
     (at ? '  ·  ' + at : '');
 

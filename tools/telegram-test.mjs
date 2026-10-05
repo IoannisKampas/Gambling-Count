@@ -40,6 +40,7 @@ const items = args.includes('--many')
     sample('allin1', -4, 'Mega Roulette 3000', 'playtech', [26, 14, 29, 11, 36, 20]),
     sample('diada', -4, 'Turkish Mega Roulette', 'pragmatic', [8, 15, 22, 31, 1, 17]),
     sample('enaduo2', -6, 'Speed Auto Roulette', 'pragmatic', [3, 24, 30, 6, 13, 35]),
+    sample('andreas', -8, 'Roulette Italia Tricolore', 'pragmatic', [19, 1, 7, 11, 36, 2]),
   ]
   : [sample('monada', -4, 'Brazilian Roulette', 'pragmatic', [12, 7, 0, 4, 18, 3], true)];
 

@@ -1,9 +1,9 @@
-// Roulette group patterns — AGENT-BRIEF.md.
+// Roulette group patterns — AGENT-BRIEF.md plus AGENT-BRIEF-ADDENDUM-1.md.
 //
-// Ten readings watch the same shape in the spin sequence: a run of numbers from one
+// Fourteen readings watch the same shape in the spin sequence: a run of numbers from one
 // group, interrupted by the other group, and then one spin that decides what the
 // interruption meant. They differ only by five numbers (§4), so there is ONE reducer
-// and ten rows of data - never ten functions, and never a "swap the groups" wrapper,
+// and fourteen rows of data - never fourteen functions, and never a "swap the groups" wrapper,
 // because two copies of this logic drifting apart is how a count that is not real gets
 // reported (§1).
 //
@@ -14,6 +14,26 @@
 export const GROUP_A = [0, 1, 2, 3, 6, 7, 8, 10, 13, 14, 17, 20, 23, 25, 26, 27, 28, 29];
 export const GROUP_B = [4, 5, 9, 11, 12, 15, 16, 18, 19, 21, 22, 24, 30, 31, 32, 33, 34, 35, 36];
 const A_SET = new Set(GROUP_A);
+
+// Group C is a SEPARATE, overlapping split - not a third slice of A/B. Nine of these
+// numbers are group A and six are group B, so a spin belongs to A or B *and* may also
+// belong to C. It exists for the absence readings below, which care only about whether
+// a number is in C.
+export const GROUP_C = [0, 2, 3, 5, 8, 10, 17, 21, 23, 25, 26, 30, 32, 34, 35];
+const C_SET = new Set(GROUP_C);
+
+// Membership sets a streak reading can watch, by name. Kept out of the READINGS rows
+// themselves so those stay plain JSON for the API and the page.
+const MEMBERS = { A: A_SET, B: new Set(GROUP_B), C: C_SET };
+
+export function inGroup(name, n) {
+  const set = MEMBERS[name];
+  if (!set) throw new RangeError('unknown group: ' + JSON.stringify(name));
+  if (!Number.isInteger(n) || n < 0 || n > 36) {
+    throw new RangeError('not a spin: ' + JSON.stringify(n));
+  }
+  return set.has(n);
+}
 
 // A number outside 0..36, or a non-integer, is not a spin. Reject it loudly - never
 // coerce it and never let it fall silently into a group (§1.4).
@@ -36,38 +56,79 @@ export const EVENT = { NONE: 'NONE', ARMED: 'ARMED', COUNT: 'COUNT', RESET: 'RES
 //   deepensOnReturn true: deepens when the ORIGINAL group returns
 //                   false: deepens when the INTERRUPTING group carries on
 //
-// `label`/`needs` are for display only and never affect the count.
+// `label`/`needs` are for display only and never affect the count. `alertDepth` is the
+// count at which this reading pushes a notification: each reading has its own, because a
+// −6 means something quite different on a reading that arms every other spin than on one
+// that arms every fortieth. ALERT_DEPTHS overrides these per reading at run time.
 export const READINGS = [
   { id: 'allin1', label: 'All in 1', side: 'either',
     needs: 'run of 3+ · 1 opposite · the run’s group returns',
-    minRunToArm: 3, armsFrom: null, armAfter: 1, decideAfter: 2, deepensOnReturn: true },
+    minRunToArm: 3, armsFrom: null, armAfter: 1, decideAfter: 2, deepensOnReturn: true, alertDepth: 11 },
   { id: 'monada', label: 'Monada', side: 'A',
     needs: 'A-run · 1 B · another B',
-    minRunToArm: 1, armsFrom: 'A', armAfter: 1, decideAfter: 2, deepensOnReturn: false },
+    minRunToArm: 1, armsFrom: 'A', armAfter: 1, decideAfter: 2, deepensOnReturn: false, alertDepth: 12 },
   { id: 'diada', label: 'Diada', side: 'A',
     needs: 'A-run · 2 B · a third B',
-    minRunToArm: 1, armsFrom: 'A', armAfter: 2, decideAfter: 3, deepensOnReturn: false },
+    minRunToArm: 1, armsFrom: 'A', armAfter: 2, decideAfter: 3, deepensOnReturn: false, alertDepth: 10 },
   { id: 'triada', label: 'Triada', side: 'A',
     needs: 'A-run · 3 B · a fourth B',
-    minRunToArm: 1, armsFrom: 'A', armAfter: 3, decideAfter: 4, deepensOnReturn: false },
+    minRunToArm: 1, armsFrom: 'A', armAfter: 3, decideAfter: 4, deepensOnReturn: false, alertDepth: 8 },
+  { id: 'tetrada', label: 'Tetrada', side: 'A',
+    needs: 'A-run · 4 B · a fifth B',
+    minRunToArm: 1, armsFrom: 'A', armAfter: 4, decideAfter: 5, deepensOnReturn: false },
+  { id: 'pentada', label: 'Pentada', side: 'A',
+    needs: 'A-run · 5 B · a sixth B',
+    minRunToArm: 1, armsFrom: 'A', armAfter: 5, decideAfter: 6, deepensOnReturn: false },
   { id: 'enaduo', label: 'Ena/Duo', side: 'A',
     needs: 'A-run · armed from the 1st B · counts on the 3rd',
-    minRunToArm: 1, armsFrom: 'A', armAfter: 1, decideAfter: 3, deepensOnReturn: false },
+    minRunToArm: 1, armsFrom: 'A', armAfter: 1, decideAfter: 3, deepensOnReturn: false, alertDepth: 6 },
   { id: 'allin2', label: 'All in 2', side: 'either',
     needs: 'run of 3+ · 1 opposite · the opposite repeats',
-    minRunToArm: 3, armsFrom: null, armAfter: 1, decideAfter: 2, deepensOnReturn: false },
+    minRunToArm: 3, armsFrom: null, armAfter: 1, decideAfter: 2, deepensOnReturn: false, alertDepth: 11 },
   { id: 'monada2', label: 'Monada 2', side: 'B',
     needs: 'B-run · 1 A · another A',
-    minRunToArm: 1, armsFrom: 'B', armAfter: 1, decideAfter: 2, deepensOnReturn: false },
+    minRunToArm: 1, armsFrom: 'B', armAfter: 1, decideAfter: 2, deepensOnReturn: false, alertDepth: 12 },
   { id: 'diada2', label: 'Diada 2', side: 'B',
     needs: 'B-run · 2 A · a third A',
-    minRunToArm: 1, armsFrom: 'B', armAfter: 2, decideAfter: 3, deepensOnReturn: false },
+    minRunToArm: 1, armsFrom: 'B', armAfter: 2, decideAfter: 3, deepensOnReturn: false, alertDepth: 10 },
   { id: 'triada2', label: 'Triada 2', side: 'B',
     needs: 'B-run · 3 A · a fourth A',
-    minRunToArm: 1, armsFrom: 'B', armAfter: 3, decideAfter: 4, deepensOnReturn: false },
+    minRunToArm: 1, armsFrom: 'B', armAfter: 3, decideAfter: 4, deepensOnReturn: false, alertDepth: 8 },
+  { id: 'tetrada2', label: 'Tetrada 2', side: 'B',
+    needs: 'B-run · 4 A · a fifth A',
+    minRunToArm: 1, armsFrom: 'B', armAfter: 4, decideAfter: 5, deepensOnReturn: false },
+  { id: 'pentada2', label: 'Pentada 2', side: 'B',
+    needs: 'B-run · 5 A · a sixth A',
+    minRunToArm: 1, armsFrom: 'B', armAfter: 5, decideAfter: 6, deepensOnReturn: false },
   { id: 'enaduo2', label: 'Ena/Duo 2', side: 'B',
     needs: 'B-run · armed from the 1st A · counts on the 3rd',
-    minRunToArm: 1, armsFrom: 'B', armAfter: 1, decideAfter: 3, deepensOnReturn: false },
+    minRunToArm: 1, armsFrom: 'B', armAfter: 1, decideAfter: 3, deepensOnReturn: false, alertDepth: 6 },
+
+  // An ABSENCE reading, and the only one so far: it watches for a group not turning up
+  // rather than for a run being interrupted. Every spin outside group C takes the count
+  // one deeper; any group-C number wipes it back to 0. There is no arming and no
+  // decider, so `phase` stays BUILDING for it and `armed` never means anything.
+  //
+  // STREAK readings. These watch one membership rather than a run being interrupted:
+  // every spin on the right side of it takes the count one deeper, and the first spin on
+  // the wrong side wipes it to 0. `deepensOn` says which side counts - 'in' the group
+  // (Serie) or 'out' of it (Andreas Deluxe). There is no arming and no decider, so
+  // `phase` stays BUILDING for all of them and `armed` never means anything.
+  { id: 'serie1', label: 'Serie 1', side: 'A', kind: 'streak', group: 'A', deepensOn: 'in',
+    needs: 'consecutive Group A numbers · any Group B number resets it',
+    alertDepth: 11 },
+  { id: 'serie2', label: 'Serie 2', side: 'B', kind: 'streak', group: 'B', deepensOn: 'in',
+    needs: 'consecutive Group B numbers · any Group A number resets it',
+    alertDepth: 11 },
+
+  // alertDepth is far deeper here than the arithmetic alone suggests, and deliberately:
+  // group C holds 15 of 37 pockets, so a miss is 22/37 ≈ 59% likely and this count moves
+  // constantly. Measured over 2M spins, −5 pushes every ~14 minutes per table (one every
+  // 25 seconds across 33 armed tables, which drowns everything else); −8 is every ~66
+  // minutes per table. ALERT_DEPTHS='andreas=N' tunes it without a code change.
+  { id: 'andreas', label: 'Andreas Deluxe', side: 'C', kind: 'streak', group: 'C', deepensOn: 'out',
+    needs: 'every spin outside Group C deepens it · any Group C number resets it',
+    alertDepth: 8 },
 ];
 
 export const READING_IDS = READINGS.map((r) => r.id);
@@ -105,6 +166,30 @@ export function applySpin(prev, n, reading) {
   const rules = rulesFor(reading);
   const s = { ...prev };
   let event = EVENT.NONE;
+
+  // A streak reading counts spins on one side of a membership, and nothing else: no run
+  // to build, nothing to arm, no decider. It shares the state shape so every reading can
+  // be stored, projected and displayed the same way.
+  if (rules.kind === 'streak') {
+    const member = inGroup(rules.group, n);
+    const deepens = rules.deepensOn === 'in' ? member : !member;
+    if (deepens) {
+      s.count -= 1;
+      s.runLength = -s.count;     // the current streak, for display
+      event = EVENT.COUNT;
+    } else {
+      // only a standing count is a reset; breaking a streak of nothing is an ordinary
+      // spin, and counting it would make the resets figure meaningless
+      if (s.count < 0) { s.resets += 1; event = EVENT.RESET; }
+      s.count = 0;
+      s.runLength = 0;
+    }
+    s.phase = PHASE.BUILDING;
+    s.runGroup = member ? rules.group : null;
+    s.originGroup = null;
+    if (s.count < s.deepest) s.deepest = s.count;
+    return { state: s, event };
+  }
 
   if (s.phase === PHASE.INTERRUPTED) {
     const returned = g === s.originGroup;
@@ -222,7 +307,7 @@ const freshReadings = () => {
   return out;
 };
 
-// Tracks all ten readings for many tables across repeated polls.
+// Tracks every reading for many tables across repeated polls.
 export class PatternTracker {
   constructor() { this.tables = new Map(); }
 
