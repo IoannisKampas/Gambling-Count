@@ -65,15 +65,46 @@ const PROXY = parseProxy(process.env.SESSION_PROXY);
 const PROXY_LOCAL_PORT = Number(process.env.SESSION_PROXY_PORT) ||
   (PROXY ? 20000 + createHash('sha256').update(process.env.SESSION_PROXY).digest().readUInt16BE(0) % 10000 : 0);
 
+// a function declaration, not a const: PROXY is parsed at module load, above this point
+function basic(user, pass) {
+  return user ? 'Basic ' + Buffer.from(user + ':' + pass).toString('base64') : null;
+}
+
+// Accepts either form, because providers hand out both:
+//
+//   http://user:pass@host:port     a URL (what the dashboards show)
+//   host:port:user:pass            colon-separated (IPRoyal, Smartproxy, …)
+//
+// Trailing whitespace is stripped: a value pasted into a quoted shell variable or an
+// EnvironmentFile often carries a newline, and that newline otherwise ends up inside
+// the password, where it fails as a wrong password rather than as a malformed setting.
 function parseProxy(raw) {
-  if (!raw) return null;
-  const u = new URL(raw.includes('://') ? raw : 'http://' + raw);
-  if (u.protocol !== 'http:') throw new Error('SESSION_PROXY must be an http:// proxy');
-  const user = decodeURIComponent(u.username);
+  const value = String(raw || '').trim();
+  if (!value) return null;
+
+  // colon form: exactly host:port:user:pass, and no @ to confuse it with a URL
+  if (!value.includes('://') && !value.includes('@')) {
+    const parts = value.split(':');
+    if (parts.length === 4 && /^\d+$/.test(parts[1])) {
+      const [host, port, user, pass] = parts;
+      return { host, port: Number(port), auth: basic(user, pass) };
+    }
+  }
+
+  let u;
+  try {
+    u = new URL(value.includes('://') ? value : 'http://' + value);
+  } catch {
+    throw new Error('SESSION_PROXY is not a proxy address. Use  http://user:pass@host:port  ' +
+      'or  host:port:user:pass  (got ' + value.length + ' characters starting "' +
+      value.slice(0, 24) + '")');
+  }
+  if (u.protocol !== 'http:') throw new Error('SESSION_PROXY must be an http:// proxy, not ' + u.protocol);
+  if (!u.hostname) throw new Error('SESSION_PROXY has no host');
   return {
     host: u.hostname,
     port: Number(u.port || 80),
-    auth: user ? 'Basic ' + Buffer.from(user + ':' + decodeURIComponent(u.password)).toString('base64') : null,
+    auth: basic(decodeURIComponent(u.username), decodeURIComponent(u.password)),
   };
 }
 
