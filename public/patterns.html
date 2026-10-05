@@ -199,6 +199,8 @@ footer{padding:20px;font-family:var(--f-mono);font-size:9px;letter-spacing:.12em
   </select>
   <button id="armedonly">Armed only</button>
   <button id="bellsonly" title="show only the tables that push to Telegram">🔔 Selected</button>
+  <button id="bellshown" title="arm Telegram pushes for every table currently listed below">🔔 Arm shown</button>
+  <button id="bellclear" title="stop Telegram pushes for every table">🔔 None</button>
   <button id="follow" title="show only the tables selected on the Settings page">Following settings</button>
 </header>
 
@@ -425,6 +427,11 @@ function render(){
                        (a, b) => best(b) - best(a) || a.name.localeCompare(b.name);
   rows.sort(cmp);
   $('#empty').hidden = rows.length > 0;
+  // an empty board has three quite different causes; saying which saves a hunt
+  $('#empty').textContent = !tables.length ? 'No tables tracked yet — waiting for the roulette feed'
+    : (bellsOnly && !pushTables.size && !pushAll)
+      ? 'No tables are armed for Telegram yet — click 🔔 on a card, or “Arm shown”'
+      : 'No tables match these filters';
   patch($('#board'), rows.map(card));
   tabs();
 
@@ -461,6 +468,28 @@ $('#follow').addEventListener('click', () => {
 $('#bellsonly').addEventListener('click', () => {
   bellsOnly = !bellsOnly; $('#bellsonly').classList.toggle('on', bellsOnly); savePrefs(); render();
 });
+
+// Replace the push selection with the tables currently listed. That is how the table
+// picks on /settings reach the server: they are a browser-side filter, so whatever they
+// leave on screen is the selection you meant, and one click sends it over.
+async function setSelection(ids){
+  try {
+    const r = await fetch('/api/alerts/tables', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ tables: ids }),
+    });
+    const j = await r.json();
+    pushTables = new Set(j.tables || []);
+  } catch {}
+  render();
+}
+$('#bellshown').addEventListener('click', () => {
+  const ids = [...$('#board').children].map((el) => el.dataset.key);
+  if (!ids.length) return;
+  if (bellsOnly) { bellsOnly = false; $('#bellsonly').classList.remove('on'); savePrefs(); }
+  setSelection(ids);
+});
+$('#bellclear').addEventListener('click', () => setSelection([]));
 // Toggling a bell writes through to the server and updates the card immediately, so the
 // click feels instant even though the next poll is up to a second away.
 $('#board').addEventListener('click', async (e) => {
