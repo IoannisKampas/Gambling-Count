@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { MultiFeed, MAX_CONCURRENT } from './src/multifeed.mjs';
 import { DgaLobby, mergeResults } from './src/dga.mjs';
 import { PlaytechLobby, isRoulette as isPtRoulette } from './src/playtech.mjs';
-import { PatternTracker, GROUP_A, GROUP_B } from './src/patterns.mjs';
+import { PatternTracker, GROUP_A, GROUP_B, READINGS, READING_IDS } from './src/patterns.mjs';
 import { SessionProvider } from './src/session.mjs';
 import { proxySummary } from './src/chrome.mjs';
 import * as operators from './src/operators.mjs';
@@ -661,8 +661,10 @@ function rouletteTables(want) {
 }
 
 // ------------------------------------------------------------------- patterns ----
-// PATTERNS.md. Both patterns are advanced from the same loop, over the same spins, in
-// the same order (§8.5) - a second history fetch would eventually disagree with itself.
+// PATTERNS.md. All ten readings are advanced from the same loop, over the same spins,
+// in the same order (§8.5) - a second history fetch would eventually disagree with
+// itself. Only All in 1 is the alerting reading, per §8.5; the rest are counted and
+// shown but never notify.
 const patterns = new PatternTracker();
 
 function patternTick() {
@@ -680,6 +682,8 @@ function patternRows(want) {
   for (const t of patterns.all()) {
     if (want && !(t.meta.operators || []).includes(want)) continue;
     const strip = (t.strip || []).slice(0, 24);
+    const reads = {};
+    for (const id of READING_IDS) reads[id] = projectState(t.reads[id].state, t.reads[id].lastEvent);
     out.push({
       id: t.id,
       name: t.meta.name,
@@ -690,8 +694,7 @@ function patternRows(want) {
       open: t.meta.open !== false,
       desynced: t.desynced,
       spins: strip,                       // newest first, for the strip
-      p1: projectState(t.p1, t.lastEvent1),
-      p2: projectState(t.p2, t.lastEvent2),
+      reads,                              // keyed by reading id; see READINGS
       updatedAt: t.updatedAt,
     });
   }
@@ -714,6 +717,9 @@ async function routeRest(req, res, url) {
     return json(res, 200, {
       tables: patternRows(url.searchParams.get('operator')),
       groups: { A: GROUP_A, B: GROUP_B },
+      // the ten readings and their rules, so the page never restates the spec
+      readings: READINGS,
+      alerting: 'allin1',                 // PATTERNS.md §8.5 - one reading alerts
       at: Date.now(),
     });
   }

@@ -1,23 +1,22 @@
-// Roulette pattern tracking — PATTERNS.md §2–§5, §8.
+// Roulette group patterns — AGENT-BRIEF.md.
 //
-// Two patterns watch the same shape in the spin sequence: a run of 3+ from one group,
-// interrupted by one spin of the other group, then a single deciding spin. Pattern 1
-// counts when the origin group RETURNS; Pattern 2 counts when the interrupter REPEATS.
-// That swap is the only difference between them (§4).
+// Ten readings watch the same shape in the spin sequence: a run of numbers from one
+// group, interrupted by the other group, and then one spin that decides what the
+// interruption meant. They differ only by five numbers (§4), so there is ONE reducer
+// and ten rows of data - never ten functions, and never a "swap the groups" wrapper,
+// because two copies of this logic drifting apart is how a count that is not real gets
+// reported (§1).
 //
 // The state machine is pure: state + number -> new state. No I/O, no clock, no
-// randomness, so a stored history can be replayed through it and tested offline (§5).
-// Both patterns are the same function with a variant flag, so there is one
-// implementation to get right rather than two that drift.
+// randomness, so a stored history can be replayed through it and tested offline (§1.2).
 
 // §2 — the fixed, arbitrary split. Not red/black, not odd/even. Zero is in group A.
 export const GROUP_A = [0, 1, 2, 3, 6, 7, 8, 10, 13, 14, 17, 20, 23, 25, 26, 27, 28, 29];
 export const GROUP_B = [4, 5, 9, 11, 12, 15, 16, 18, 19, 21, 22, 24, 30, 31, 32, 33, 34, 35, 36];
 const A_SET = new Set(GROUP_A);
-const B_SET = new Set(GROUP_B);
 
 // A number outside 0..36, or a non-integer, is not a spin. Reject it loudly - never
-// coerce it and never let it fall silently into a group (§2).
+// coerce it and never let it fall silently into a group (§1.4).
 export function groupOf(n) {
   if (!Number.isInteger(n) || n < 0 || n > 36) {
     throw new RangeError('not a spin: ' + JSON.stringify(n));
@@ -28,6 +27,63 @@ export function groupOf(n) {
 export const PHASE = { BUILDING: 'BUILDING', INTERRUPTED: 'INTERRUPTED' };
 export const EVENT = { NONE: 'NONE', ARMED: 'ARMED', COUNT: 'COUNT', RESET: 'RESET' };
 
+// §4 — this table IS the specification. Everything else follows from it.
+//
+//   minRunToArm     how long a run must be before breaking it can arm anything
+//   armsFrom        which group's run may arm; null = either (the All in pair)
+//   armAfter        how long the interrupting run must get to count as armed
+//   decideAfter     how long it must get for the interrupter carrying on to resolve
+//   deepensOnReturn true: deepens when the ORIGINAL group returns
+//                   false: deepens when the INTERRUPTING group carries on
+//
+// `label`/`needs` are for display only and never affect the count.
+export const READINGS = [
+  { id: 'allin1', label: 'All in 1', side: 'either',
+    needs: 'run of 3+ · 1 opposite · the run’s group returns',
+    minRunToArm: 3, armsFrom: null, armAfter: 1, decideAfter: 2, deepensOnReturn: true },
+  { id: 'monada', label: 'Monada', side: 'A',
+    needs: 'A-run · 1 B · another B',
+    minRunToArm: 1, armsFrom: 'A', armAfter: 1, decideAfter: 2, deepensOnReturn: false },
+  { id: 'diada', label: 'Diada', side: 'A',
+    needs: 'A-run · 2 B · a third B',
+    minRunToArm: 1, armsFrom: 'A', armAfter: 2, decideAfter: 3, deepensOnReturn: false },
+  { id: 'triada', label: 'Triada', side: 'A',
+    needs: 'A-run · 3 B · a fourth B',
+    minRunToArm: 1, armsFrom: 'A', armAfter: 3, decideAfter: 4, deepensOnReturn: false },
+  { id: 'enaduo', label: 'Ena/Duo', side: 'A',
+    needs: 'A-run · armed from the 1st B · counts on the 3rd',
+    minRunToArm: 1, armsFrom: 'A', armAfter: 1, decideAfter: 3, deepensOnReturn: false },
+  { id: 'allin2', label: 'All in 2', side: 'either',
+    needs: 'run of 3+ · 1 opposite · the opposite repeats',
+    minRunToArm: 3, armsFrom: null, armAfter: 1, decideAfter: 2, deepensOnReturn: false },
+  { id: 'monada2', label: 'Monada 2', side: 'B',
+    needs: 'B-run · 1 A · another A',
+    minRunToArm: 1, armsFrom: 'B', armAfter: 1, decideAfter: 2, deepensOnReturn: false },
+  { id: 'diada2', label: 'Diada 2', side: 'B',
+    needs: 'B-run · 2 A · a third A',
+    minRunToArm: 1, armsFrom: 'B', armAfter: 2, decideAfter: 3, deepensOnReturn: false },
+  { id: 'triada2', label: 'Triada 2', side: 'B',
+    needs: 'B-run · 3 A · a fourth A',
+    minRunToArm: 1, armsFrom: 'B', armAfter: 3, decideAfter: 4, deepensOnReturn: false },
+  { id: 'enaduo2', label: 'Ena/Duo 2', side: 'B',
+    needs: 'B-run · armed from the 1st A · counts on the 3rd',
+    minRunToArm: 1, armsFrom: 'B', armAfter: 1, decideAfter: 3, deepensOnReturn: false },
+];
+
+export const READING_IDS = READINGS.map((r) => r.id);
+const RULES = new Map(READINGS.map((r) => [r.id, r]));
+
+// The two readings this app tracked before the other eight existed were the All in
+// pair, as variant 1 and 2. Callers (and stored test vectors) may still say 1 or 2.
+const ALIAS = { 1: 'allin1', 2: 'allin2' };
+
+function rulesFor(reading) {
+  const id = ALIAS[reading] || reading;
+  const r = RULES.get(id);
+  if (!r) throw new RangeError('unknown reading: ' + JSON.stringify(reading));
+  return r;
+}
+
 export function createState() {
   return {
     count: 0,
@@ -35,46 +91,68 @@ export function createState() {
     runGroup: null,
     runLength: 0,
     originGroup: null,
-    // derived figures that cannot be recovered afterwards (§5)
+    // derived figures that cannot be recovered afterwards (§3)
     deepest: 0,
     resets: 0,
     spinsObserved: 0,
   };
 }
 
-// §5 — the whole of the pattern logic. `variant` is 1 or 2.
-// Returns { state, event }; the input state is not mutated.
-export function applySpin(prev, n, variant) {
+// §5 — the whole of the pattern logic, for every reading. Returns { state, event };
+// the input state is not mutated.
+export function applySpin(prev, n, reading) {
   const g = groupOf(n);
+  const rules = rulesFor(reading);
   const s = { ...prev };
   let event = EVENT.NONE;
 
   if (s.phase === PHASE.INTERRUPTED) {
     const returned = g === s.originGroup;
-    // The entire difference between the two patterns, and the only one.
-    const deepens = variant === 1 ? returned : !returned;
 
-    if (deepens) { s.count -= 1; event = EVENT.COUNT; }
-    else { s.count = 0; s.resets += 1; event = EVENT.RESET; }
+    if (!returned && s.runLength + 1 < rules.decideAfter) {
+      // Armed, but the interruption is not yet long enough to be decided: it simply
+      // lengthens and stays armed. Only the two Ena/Duo readings reach this.
+      s.runLength += 1;
+      event = EVENT.ARMED;
+    } else {
+      const deepens = rules.deepensOnReturn ? returned : !returned;
 
-    s.phase = PHASE.BUILDING;
-    s.runGroup = g;
-    // §3.4 the carry: a return stands alone, a repeat is already the second of its run.
-    // Never depends on the variant.
-    s.runLength = returned ? 1 : 2;
-    s.originGroup = null;
+      if (deepens) { s.count -= 1; event = EVENT.COUNT; }
+      else { s.count = 0; s.resets += 1; event = EVENT.RESET; }
+
+      s.phase = PHASE.BUILDING;
+      s.runGroup = g;
+      // §5 the carry: the group that returned stands alone, the group that carried on
+      // has been seen twice. Never depends on the reading.
+      s.runLength = returned ? 1 : 2;
+      s.originGroup = null;
+    }
   } else {
     if (s.runGroup === null) {
       s.runGroup = g; s.runLength = 1;
     } else if (g === s.runGroup) {
       s.runLength += 1;
-    } else if (s.runLength >= 3) {
-      s.phase = PHASE.INTERRUPTED;
+      // An interruption already under way, now long enough to arm. Only a reading with
+      // armAfter > 1 reaches this; for the rest the interrupting spin arms below.
+      if (s.originGroup !== null && s.runLength >= rules.armAfter) {
+        s.phase = PHASE.INTERRUPTED; event = EVENT.ARMED;
+      }
+    } else if (s.runLength >= rules.minRunToArm &&
+               (rules.armsFrom === null || s.runGroup === rules.armsFrom)) {
+      // A qualifying run has been broken. originGroup is set HERE, the moment the run
+      // breaks - not when something arms - because for the deeper readings it is what
+      // remembers, across a half-built interruption, which group the decider is
+      // measured against (§5).
       s.originGroup = s.runGroup;
       s.runGroup = g; s.runLength = 1;
-      event = EVENT.ARMED;
+      if (s.runLength >= rules.armAfter) {
+        s.phase = PHASE.INTERRUPTED; event = EVENT.ARMED;
+      }
     } else {
-      // §3.2 deadzone: chop never arms anything and never resets a count either.
+      // Deadzone - and an interruption that gave up before it armed is deadzone too,
+      // not a reset: it fires no event and leaves a standing count exactly where it
+      // was (§5, §9).
+      s.originGroup = null;
       s.runGroup = g; s.runLength = 1;
     }
   }
@@ -84,11 +162,11 @@ export function applySpin(prev, n, variant) {
 }
 
 // Replay a sequence OLDEST FIRST through a fresh state. Used for tests and for seeding.
-export function replay(spins, variant, from = createState()) {
+export function replay(spins, reading, from = createState()) {
   let state = from;
   const events = [];
   for (const n of spins) {
-    const r = applySpin(state, n, variant);
+    const r = applySpin(state, n, reading);
     state = r.state;
     events.push(r.event);
   }
@@ -138,7 +216,13 @@ export function detectNew(known, fetched) {
 const KEEP = 60;   // how much of each table's window we remember for the next diff
 const STRIP = 40;  // how many numbers we keep for display
 
-// Tracks both patterns for many tables across repeated polls.
+const freshReadings = () => {
+  const out = {};
+  for (const id of READING_IDS) out[id] = { state: createState(), lastEvent: EVENT.NONE };
+  return out;
+};
+
+// Tracks all ten readings for many tables across repeated polls.
 export class PatternTracker {
   constructor() { this.tables = new Map(); }
 
@@ -148,14 +232,13 @@ export class PatternTracker {
   // A feed reconnected, so an unknown number of spins happened while we were away.
   // §8.2 says never carry a count across that gap. We go further than §8.3's optional
   // re-seed and start genuinely clean: the numbers from before the reconnect are
-  // dropped, both counts go to 0, and the next window is adopted only as a BASELINE -
+  // dropped, every count goes to 0, and the next window is adopted only as a BASELINE -
   // it is not replayed - so counting begins with spins that arrive after the reconnect.
   markGap(match) {
     let n = 0;
     for (const t of this.tables.values()) {
       if (typeof match === 'function' ? !match(t) : false) continue;
-      t.p1 = createState();
-      t.p2 = createState();
+      t.reads = freshReadings();
       t.known = [];
       t.strip = [];              // the displayed numbers go too
       t.awaitingBaseline = true; // next window marks the starting point, unreplayed
@@ -178,9 +261,8 @@ export class PatternTracker {
         id, meta,
         known: [],
         strip: [],              // numbers to display, newest first
-        p1: createState(), p2: createState(),
+        reads: freshReadings(),
         desynced: false, seeded: false, awaitingBaseline: false,
-        lastEvent1: EVENT.NONE, lastEvent2: EVENT.NONE,
         updatedAt: 0,
       };
       this.tables.set(id, t);
@@ -202,7 +284,7 @@ export class PatternTracker {
     if (status === 'desync') {
       // §8.2 - discard the count rather than carry a plausible-but-wrong one
       t.desynced = true;
-      t.p1 = createState(); t.p2 = createState();
+      t.reads = freshReadings();
       t.known = clean.slice(0, KEEP);
       t.strip = clean.map((s) => s.n).slice(0, STRIP);
       t.seeded = true;
@@ -233,19 +315,22 @@ export class PatternTracker {
     return t;
   }
 
-  // observed=false for seeded/replayed spins: they restore the count but must not
-  // inflate the statistics (§8.3).
+  // Every reading is advanced from this one loop, over the same spins, in the same
+  // order (§8.5). observed=false for seeded/replayed spins: they restore the count but
+  // must not inflate the statistics (§8.3).
   #feed(t, spinsOldestFirst, observed) {
     for (const s of spinsOldestFirst) {
-      const r1 = applySpin(t.p1, s.n, 1);
-      const r2 = applySpin(t.p2, s.n, 2);
-      t.p1 = r1.state; t.p2 = r2.state;
-      t.lastEvent1 = r1.event; t.lastEvent2 = r2.event;
-      if (observed) { t.p1.spinsObserved += 1; t.p2.spinsObserved += 1; }
-      else {
-        // keep stats clean on a replay
-        t.p1.resets = 0; t.p2.resets = 0;
-        t.p1.spinsObserved = 0; t.p2.spinsObserved = 0;
+      for (const id of READING_IDS) {
+        const slot = t.reads[id];
+        const r = applySpin(slot.state, s.n, id);
+        slot.state = r.state;
+        slot.lastEvent = r.event;
+        if (observed) slot.state.spinsObserved += 1;
+        else {
+          // keep stats clean on a replay
+          slot.state.resets = 0;
+          slot.state.spinsObserved = 0;
+        }
       }
     }
   }
