@@ -25,3 +25,6 @@ data/lobby-*.json
 # store), or imported and shredded by `npm run creds` - either way, never in git
 data/credentials.json
 credentials.json
+
+# which tables may raise a push; per-host state, like data/operators.json
+data/alerts.json

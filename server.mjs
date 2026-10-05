@@ -16,6 +16,7 @@ import { PlaytechLobby, isRoulette as isPtRoulette } from './src/playtech.mjs';
 import { PatternTracker, GROUP_A, GROUP_B, READINGS, READING_IDS } from './src/patterns.mjs';
 import { Telegram } from './src/telegram.mjs';
 import * as alerts from './src/alerts.mjs';
+import { AlertSelection } from './src/selection.mjs';
 import { SessionProvider } from './src/session.mjs';
 import { proxySummary } from './src/chrome.mjs';
 import * as operators from './src/operators.mjs';
@@ -45,6 +46,11 @@ const SESSION_CHECK_MS = Number(process.env.SESSION_CHECK_MS || 4 * 60 * 1000);
 // asked for here. Nothing is pushed at all unless both Telegram variables are set.
 const ALERT_DEPTH = Number(process.env.ALERT_DEPTH || 4);
 const ALERT_READINGS = (process.env.ALERT_READINGS || '').split(',').map((s) => s.trim()).filter(Boolean);
+// Tables chosen in the UI (data/alerts.json). ALERT_TABLES adds more by id or by name,
+// for a host configured without touching a browser; ALERT_ALL=1 pushes every table,
+// which is what this did before the selection existed.
+const ALERT_TABLES = (process.env.ALERT_TABLES || '').split(',').map((s) => s.trim()).filter(Boolean);
+const ALERT_ALL = process.env.ALERT_ALL === '1';
 
 // ---------------------------------------------------------------- catalogue ----
 // Each operator's lobby returns only the tables that operator carries, so the wall
@@ -688,6 +694,23 @@ const telegram = new Telegram({
   log,
 });
 const alertState = alerts.createAlertState();
+// The selection has to be server-side: /settings keeps its table picks in localStorage,
+// which this process cannot see and which is gone whenever no page is open.
+const alertTables = new AlertSelection({ file: path.join(ROOT, 'data/alerts.json'), log });
+
+// Which table ids may push right now: the saved selection, plus anything ALERT_TABLES
+// names (by id or by table name, so a VPS can be configured without a browser).
+function alertableIds(rows) {
+  if (ALERT_ALL) return null;                       // null means "no filter"
+  const ids = new Set(alertTables.list());
+  if (ALERT_TABLES.length) {
+    const named = new Set(ALERT_TABLES.map((s) => s.toLowerCase()));
+    for (const r of rows) {
+      if (named.has(r.id.toLowerCase()) || named.has((r.name || '').toLowerCase())) ids.add(r.id);
+    }
+  }
+  return ids;
+}
 
 function patternTick() {
   for (const t of rouletteTables(null)) {
@@ -701,10 +724,14 @@ function patternTick() {
   // Alerting runs off the same rows the dashboard is served, in the same tick, so a
   // push can never describe a count the wall does not show.
   if (!telegram.configured) return;
-  const hits = alerts.scan(alertState, patternRows(null), {
+  const rows = patternRows(null);
+  const allowed = alertableIds(rows);
+  if (allowed && !allowed.size) return;   // nothing selected: nothing to push
+  const hits = alerts.scan(alertState, rows, {
     depth: ALERT_DEPTH,
     readings: READINGS,
     only: ALERT_READINGS.length ? ALERT_READINGS : null,
+    onlyTables: allowed,
   });
   if (!hits.length) return;
   for (const h of hits) {
@@ -760,9 +787,27 @@ async function routeRest(req, res, url) {
       readings: READINGS,
       alerting: 'allin1',                 // PATTERNS.md §8.5 - one reading alerts
       push: { ...telegram.status(), depth: ALERT_DEPTH,
-        readings: ALERT_READINGS.length ? ALERT_READINGS : 'all' },
+        readings: ALERT_READINGS.length ? ALERT_READINGS : 'all',
+        tables: alertTables.list(),       // the UI draws a bell per table from this
+        all: ALERT_ALL,
+        fromEnv: ALERT_TABLES },
       at: Date.now(),
     });
+  }
+
+  // Choose which tables may push. `{ id, on }` toggles one, `{ tables: [...] }`
+  // replaces the selection, `{ clear: true }` empties it. Saved to data/alerts.json, so
+  // it survives a restart and does not depend on a browser being open.
+  if (url.pathname === '/api/alerts/tables' && req.method === 'POST') {
+    let body = {};
+    try { body = await readJson(req); } catch {}
+    let list;
+    if (body.clear) list = alertTables.clear();
+    else if (Array.isArray(body.tables)) list = alertTables.set(body.tables);
+    else if (body.id) list = alertTables.toggle(String(body.id), body.on);
+    else return json(res, 400, { error: 'send { id, on }, { tables: [...] } or { clear: true }' });
+    log.info('alert selection: ' + list.length + ' table' + (list.length === 1 ? '' : 's'));
+    return json(res, 200, { ok: true, tables: list });
   }
 
   // Supply a JSESSIONID for one operator, copied from that casino's signed-in
@@ -998,11 +1043,18 @@ server.listen(PORT, HOST, async () => {
   console.log('  logging to ' + log.path + (RECORD_DIR ? '; recording to ' + RECORD_DIR : '') + '\n');
   log.info('server started on :' + PORT);
   if (proxySummary()) log.info('browser traffic via proxy ' + proxySummary());
-  log.info(telegram.configured
-    ? 'telegram alerts on: −' + ALERT_DEPTH + ' or deeper, ' +
+  if (!telegram.configured) {
+    log.info('telegram alerts off (set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)');
+  } else {
+    const scope = ALERT_ALL ? 'every table'
+      : (alertTables.size + ALERT_TABLES.length)
+        ? alertTables.size + ' selected table' + (alertTables.size === 1 ? '' : 's') +
+          (ALERT_TABLES.length ? ' + ' + ALERT_TABLES.length + ' from ALERT_TABLES' : '')
+        : 'NO tables selected yet - pick them with the bell on /patterns';
+    log.info('telegram alerts on: −' + ALERT_DEPTH + ' or deeper, ' +
       (ALERT_READINGS.length ? ALERT_READINGS.join('/') : 'all ten readings') +
-      ', chat ' + process.env.TELEGRAM_CHAT_ID
-    : 'telegram alerts off (set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)');
+      ', ' + scope + ', chat ' + process.env.TELEGRAM_CHAT_ID);
+  }
 
   // Restore every operator session persisted from a previous run, so a restart comes
   // back with all accounts live. Env JSESSIONID still seeds the default operator.

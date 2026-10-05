@@ -86,6 +86,14 @@ section{padding:18px 20px 4px}
   color:var(--ink-dim);flex:none}
 .tag.pt{background:var(--brand-surface);color:var(--brand-ink)}
 .tag.bad{background:#3a1717;color:#f0a3a3}
+/* push selection: only these tables raise a Telegram alert */
+.bell{font-size:12px;line-height:1;padding:3px 5px;border-radius:4px;cursor:pointer;flex:none;
+  border:1px solid var(--btn-border);background:var(--surface-raised);opacity:.45;
+  filter:grayscale(1)}
+.bell:hover{opacity:.85;filter:none;border-color:var(--border-hover)}
+.bell.on{opacity:1;filter:none;border-color:var(--warn);
+  background:color-mix(in srgb,var(--warn) 16%,transparent)}
+
 /* the current run, shown as a group letter — §2.1 keeps letter and colour together */
 .runmark{font-family:var(--f-mono);font-weight:700;font-size:11px;padding:2px 6px;border-radius:3px;
   margin-left:auto;flex:none}
@@ -190,6 +198,7 @@ footer{padding:20px;font-family:var(--f-mono);font-size:9px;letter-spacing:.12em
     <option value="4">≤ −4</option>
   </select>
   <button id="armedonly">Armed only</button>
+  <button id="bellsonly" title="show only the tables that push to Telegram">🔔 Selected</button>
   <button id="follow" title="show only the tables selected on the Settings page">Following settings</button>
 </header>
 
@@ -221,6 +230,11 @@ const $ = (s) => document.querySelector(s);
 let tables = [], groups = { A: [], B: [] }, readings = [], alerting = 'allin1';
 let aSet = new Set();
 let armedOnly = false;
+// which tables push to Telegram. Server-side state (data/alerts.json), not localStorage:
+// the pushes are sent by the server, so the choice has to be somewhere it can see.
+let pushTables = new Set();
+let pushAll = false, pushConfigured = false, pushDepth = 4;
+let bellsOnly = false;
 let focusId = '';          // '' = show all ten readings on every card
 
 const PREFS = 'patwall.prefs';
@@ -247,11 +261,14 @@ function readPrefs(){
   $('#armedonly').classList.toggle('on', armedOnly);
   followSettings = p.follow !== false;
   focusId = p.focus || '';
+  bellsOnly = !!p.bells;
+  $('#bellsonly').classList.toggle('on', bellsOnly);
 }
 function savePrefs(){
   try { localStorage.setItem(PREFS, JSON.stringify({
     q: $('#q').value, prov: $('#prov').value, sort: $('#sort').value,
-    minc: $('#minc').value, armed: armedOnly, follow: followSettings, focus: focusId })); } catch {}
+    minc: $('#minc').value, armed: armedOnly, follow: followSettings, focus: focusId,
+    bells: bellsOnly })); } catch {}
 }
 readPrefs();
 readSettings();
@@ -338,8 +355,13 @@ function card(t){
     : '<div class="reads">' + PAIRS.flat().map((id) => {
         const r = reading(id); return r && t.reads[id] ? cell(r, t.reads[id]) : '';
       }).join('') + '</div>';
+  const on = pushAll || pushTables.has(t.id);
+  const bell = '<button class="bell' + (on ? ' on' : '') + '" data-bell="' + t.id + '" title="' +
+    (pushAll ? 'ALERT_ALL=1: every table pushes' : on ? 'pushing to Telegram — click to stop' :
+      'click to push −' + pushDepth + ' alerts for this table') + '">🔔</button>';
   return { key: t.id, cls: 'tbl' + (t.desynced ? ' desync' : ''), html:
     '<div class="thead">' +
+      bell +
       '<span class="tname">' + t.name + '</span>' +
       '<span class="tag' + (t.provider === 'playtech' ? ' pt' : '') + '">' + t.provider + '</span>' +
       (t.desynced ? '<span class="tag bad">desynced</span>' : '') +
@@ -384,6 +406,7 @@ function render(){
       if (rules.hideNoResults && n === 0) return false;
       if (rules.minSpins && n < rules.minSpins) return false;
     }
+    if (bellsOnly && !(pushAll || pushTables.has(t.id))) return false;
     if (prov && t.provider !== prov) return false;
     if (q && !t.name.toLowerCase().includes(q)) return false;
     if (minc && depthOf(t) < minc) return false;
@@ -413,7 +436,11 @@ function render(){
   const scope = focusId ? (reading(focusId) || {}).label : 'ten readings';
   $('#follow').classList.toggle('on', followSettings);
   $('#follow').textContent = followSettings ? 'Following settings' : 'All tables';
-  $('#tally').textContent = tables.length + ' tracked · ' + scope +
+  const pushNote = !pushConfigured ? 'push off'
+    : pushAll ? '🔔 every table'
+    : pushTables.size ? '🔔 ' + pushTables.size + ' at −' + pushDepth
+    : '🔔 none selected';
+  $('#tally').textContent = tables.length + ' tracked · ' + scope + ' · ' + pushNote +
     (followSettings && hidden.size ? ' · ' + hidden.size + ' off in settings' : '');
   $('#meta').textContent = rows.length + ' shown · ' + armed + ' armed · ' + deep + ' at −3 or deeper' +
     (desync ? ' · ' + desync + ' desynced' : '') +
@@ -430,6 +457,32 @@ $('#armedonly').addEventListener('click', () => {
 });
 $('#follow').addEventListener('click', () => {
   followSettings = !followSettings; savePrefs(); render();
+});
+$('#bellsonly').addEventListener('click', () => {
+  bellsOnly = !bellsOnly; $('#bellsonly').classList.toggle('on', bellsOnly); savePrefs(); render();
+});
+// Toggling a bell writes through to the server and updates the card immediately, so the
+// click feels instant even though the next poll is up to a second away.
+$('#board').addEventListener('click', async (e) => {
+  const b = e.target.closest('.bell');
+  if (!b) return;
+  const id = b.dataset.bell;
+  const on = !pushTables.has(id);
+  if (on) pushTables.add(id); else pushTables.delete(id);
+  b.classList.toggle('on', on);
+  render();
+  try {
+    const r = await fetch('/api/alerts/tables', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id, on }),
+    });
+    const j = await r.json();
+    if (j.tables) pushTables = new Set(j.tables);
+  } catch {
+    // put it back if the server never heard about it
+    if (on) pushTables.delete(id); else pushTables.add(id);
+  }
+  render();
 });
 $('#tabs').addEventListener('click', (e) => {
   const tab = e.target.closest('.tab'); if (!tab) return;
@@ -448,6 +501,12 @@ async function poll(){
     tables = j.tables || [];
     if (j.readings) readings = j.readings;
     if (j.alerting) alerting = j.alerting;
+    if (j.push) {
+      pushTables = new Set(j.push.tables || []);
+      pushAll = !!j.push.all;
+      pushConfigured = !!j.push.configured;
+      pushDepth = j.push.depth || 4;
+    }
     if (j.groups) { groups = j.groups; aSet = new Set(groups.A); }
     if (focusId && !reading(focusId)) focusId = '';   // a reading that no longer exists
     render();

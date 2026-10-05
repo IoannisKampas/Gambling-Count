@@ -5,7 +5,11 @@ import {
   createAlertState, scan, formatAlert, formatAlertBlock, formatBatch, spinStrip,
 } from '../src/alerts.mjs';
 import { Telegram } from '../src/telegram.mjs';
+import { AlertSelection } from '../src/selection.mjs';
 import { READINGS } from '../src/patterns.mjs';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 let pass = 0, fail = 0;
 const ok = (cond, name, extra = '') => {
@@ -106,6 +110,60 @@ section('configuration');
   ok(scan(st, [row({ monada: -2 })], { ...opts, depth: 2 }).length === 1, 'depth is configurable');
 }
 
+section('only the selected tables push');
+{
+  const st = createAlertState();
+  const two = [row({ monada: 0 }, { id: 'picked' }), row({ monada: 0 }, { id: 'ignored' })];
+  scan(st, two, { ...opts, onlyTables: ['picked'] });
+  const hits = scan(st, [row({ monada: -4 }, { id: 'picked' }), row({ monada: -4 }, { id: 'ignored' })],
+    { ...opts, onlyTables: ['picked'] });
+  ok(hits.length === 1 && hits[0].tableId === 'picked',
+    'an unselected table never pushes', JSON.stringify(hits.map((h) => h.tableId)));
+}
+{
+  // a table selected later must not arrive with a backlog: it latches first (§8.3)
+  const st = createAlertState();
+  scan(st, [row({ monada: -6 }, { id: 't' })], { ...opts, onlyTables: [] });   // nothing selected
+  const justSelected = scan(st, [row({ monada: -6 }, { id: 't' })], { ...opts, onlyTables: ['t'] });
+  ok(justSelected.length === 0, 'selecting a table that is already deep stays silent');
+  const next = scan(st, [row({ monada: -7 }, { id: 't' })], { ...opts, onlyTables: ['t'] });
+  ok(next.length === 1 && next[0].count === -7, 'and its next live deepening does push');
+}
+{
+  const st = createAlertState();
+  scan(st, [row({ monada: 0 })], opts);
+  ok(scan(st, [row({ monada: -4 })], { ...opts, onlyTables: null }).length === 1,
+    'onlyTables null means every table, as before');
+}
+
+section('the selection survives a restart');
+{
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'alertsel-'));
+  const file = path.join(dir, 'alerts.json');
+  const quietLog = { info() {}, warn() {}, error() {} };
+
+  const a = new AlertSelection({ file, log: quietLog });
+  ok(a.size === 0, 'a missing file is an empty selection');
+  a.toggle('t1', true);
+  a.toggle('t2', true);
+  a.toggle('t1', false);
+  ok(a.list().join() === 't2', 'toggling on and off', a.list().join());
+
+  const b = new AlertSelection({ file, log: quietLog });
+  ok(b.list().join() === 't2', 'reloaded from disk after a restart', b.list().join());
+
+  b.set(['x', 'y', '', null, 7]);
+  ok(b.list().join() === 'x,y', 'set() replaces, and drops anything that is not an id', b.list().join());
+  ok(JSON.parse(fs.readFileSync(file, 'utf8')).tables.join() === 'x,y', 'the file matches');
+  b.clear();
+  ok(b.size === 0 && new AlertSelection({ file, log: quietLog }).size === 0, 'clear() empties it');
+
+  fs.writeFileSync(file, '{ this is not json');
+  const c = new AlertSelection({ file, log: quietLog });
+  ok(c.size === 0, 'a corrupt file starts empty rather than throwing');
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
 section('message text');
 const rule = (id) => READINGS.find((r) => r.id === id);
 const alert = (o = {}) => ({
@@ -119,9 +177,10 @@ const alert = (o = {}) => ({
   ok(formatAlert('already a string') === 'already a string', 'strings pass through');
 }
 {
-  // spins arrive newest first and must read oldest -> newest, coloured by group
+  // the feed delivers newest first, and the strip keeps that order: the spin that just
+  // landed is the one people look for, and the wall shows it the same way round
   const strip = spinStrip([12, 7, 0]);
-  ok(strip === '🔵0 🔵7 🟠12', 'the strip is oldest-first and group-coloured', strip);
+  ok(strip === '🟠12 🔵7 🔵0', 'the strip is newest-first and group-coloured', strip);
   ok(spinStrip([]) === '', 'no spins is empty, not a stray marker');
 }
 {

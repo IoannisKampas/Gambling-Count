@@ -39,13 +39,22 @@ const keyOf = (tableId, readingId) => tableId + '|' + readingId;
 //   depth    alert at this depth or deeper, as a positive number (4 means −4)
 //   readings the READINGS metadata, carried into each alert for the message text
 //   only     Set/array of reading ids to alert on, or null for all ten
-export function scan(state, tables, { depth = DEFAULT_DEPTH, readings = [], only = null } = {}) {
+//   onlyTables  Set/array of table ids that may push, or null for every table
+//
+// A table outside `onlyTables` is skipped entirely rather than tracked-but-muted, so
+// selecting one later starts it latched like any newly seen table (§8.3) - you get its
+// next live deepening, never a backlog of counts from while it was off.
+export function scan(state, tables, {
+  depth = DEFAULT_DEPTH, readings = [], only = null, onlyTables = null,
+} = {}) {
   const want = only ? new Set(only) : null;
+  const wantTables = onlyTables ? new Set(onlyTables) : null;
   const byId = new Map(readings.map((r) => [r.id, r]));
   const alerts = [];
 
   for (const t of tables || []) {
     if (!t || !t.reads) continue;
+    if (wantTables && !wantTables.has(t.id)) continue;
     for (const [id, p] of Object.entries(t.reads)) {
       if (want && !want.has(id)) continue;
       const key = keyOf(t.id, id);
@@ -99,9 +108,12 @@ const esc = (s) => String(s == null ? '' : s)
 // as on the wall. The number is always shown as well, so nothing rests on colour.
 const DOT = { A: '🔵', B: '🟠' };
 
-// spins arrive newest first; people read a pattern left to right, oldest first
+// Newest first, left to right - the order the feed delivers them and the order the wall
+// shows them. Reversing it here read as the more natural direction for a pattern but
+// made the two disagree, which is worse: the number everyone looks for first is the spin
+// that just landed, and it belongs at the front.
 export function spinStrip(spins = []) {
-  return spins.slice().reverse().map((n) => {
+  return spins.map((n) => {
     try { return DOT[groupOf(n)] + n; } catch { return String(n); }
   }).join(' ');
 }
