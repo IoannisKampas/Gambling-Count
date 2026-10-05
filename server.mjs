@@ -682,6 +682,9 @@ const telegram = new Telegram({
   token: process.env.TELEGRAM_BOT_TOKEN,
   chatId: process.env.TELEGRAM_CHAT_ID,
   depth: ALERT_DEPTH,
+  // timestamps are for whoever reads the group, so they are in their clock, not UTC
+  tz: process.env.ALERT_TZ || 'Europe/Athens',
+  link: process.env.ALERT_LINK || '',   // optional dashboard URL, appended to a push
   log,
 });
 const alertState = alerts.createAlertState();
@@ -708,7 +711,9 @@ function patternTick() {
     log.info('alert ' + h.label + ' ' + h.count + ' on ' + h.table +
       (h.previous ? ' (was ' + h.previous + ')' : ''));
   }
-  telegram.enqueue(hits.map(alerts.formatAlert));
+  // the alerts go on the queue as objects: the message is laid out at send time, when
+  // it is known how many are going into it
+  telegram.enqueue(hits);
 }
 
 function patternRows(want) {

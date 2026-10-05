@@ -21,12 +21,19 @@ const MAX_TEXT = 3800;
 // otherwise grow for as long as the server runs. Keep the newest, since a deep count
 // from an hour ago is not news, and say so when dropping.
 const MAX_QUEUE = 200;
+// How many alerts one message may describe. Beyond this the message stops being
+// readable on a phone, and the rest are better off in the next one a few seconds later.
+const MAX_ITEMS = 12;
 
 export class Telegram {
   constructor({
     token, chatId, log = console, depth = 4,
     flushMs = 4000, maxPerMinute = 15, fetchImpl = fetch,
+    tz = 'Europe/Athens', link = '', format = formatBatch,
   } = {}) {
+    this.tz = tz;
+    this.link = link;
+    this.format = format;
     this.token = String(token || '').trim();
     this.chatId = String(chatId || '').trim();
     this.log = log;
@@ -93,29 +100,26 @@ export class Telegram {
       return;
     }
 
-    const lines = [];
-    let size = 0;
-    while (this.pending.length) {
-      // a single line longer than the cap would otherwise loop forever
-      const line = this.pending[0].slice(0, MAX_TEXT - 200);
-      if (lines.length && size + line.length + 1 > MAX_TEXT) break;
-      this.pending.shift();
-      lines.push(line);
-      size += line.length + 1;
+    const batch = this.pending.splice(0, MAX_ITEMS);
+    let text = this.#render(batch);
+    // one message has to fit Telegram's limit; hand the tail back rather than truncate
+    while (text.length > MAX_TEXT && batch.length > 1) {
+      this.pending.unshift(batch.pop());
+      text = this.#render(batch);
     }
 
     let delay = this.flushMs;
     try {
-      await this.send(formatBatch(lines, this.depth));
+      await this.send(text);
       this.sent += 1;
       this.streak = 0;
       this.backoffMs = 0;
-      this.log.info('telegram: pushed ' + lines.length + ' alert' + (lines.length === 1 ? '' : 's') +
+      this.log.info('telegram: pushed ' + batch.length + ' alert' + (batch.length === 1 ? '' : 's') +
         (this.pending.length ? ', ' + this.pending.length + ' queued' : ''));
     } catch (e) {
       this.failed += 1;
       this.streak += 1;
-      this.pending.unshift(...lines);     // nothing is dropped on a failure
+      this.pending.unshift(...batch);     // nothing is dropped on a failure
       // Back off rather than retrying every few seconds: the usual causes (bad token,
       // bot removed) do not fix themselves, and hammering the API is how a bot gets
       // blocked outright. Doubles up to a minute, and resets on the next success.
@@ -127,15 +131,28 @@ export class Telegram {
     if (this.pending.length) this.#schedule(delay);
   }
 
+  #render(items) {
+    return this.format(items, this.depth, { tz: this.tz, link: this.link });
+  }
+
   // One sendMessage call. Throws with something readable; never includes the token.
-  async send(text) {
+  //
+  // `html` false retries the same text with the markup stripped: an alert is worth more
+  // than its formatting, and a table name that breaks the HTML parser should not be the
+  // reason nobody hears about a −6.
+  async send(text, html = true) {
     if (!this.configured) throw new Error('TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID not set');
     let r;
     try {
       r = await this.fetch(API + this.token + '/sendMessage', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ chat_id: this.chatId, text, disable_web_page_preview: true }),
+        body: JSON.stringify({
+          chat_id: this.chatId,
+          text: html ? text : text.replace(/<[^>]+>/g, ''),
+          disable_web_page_preview: true,
+          ...(html ? { parse_mode: 'HTML' } : {}),
+        }),
       });
     } catch (e) {
       throw new Error('cannot reach api.telegram.org: ' + e.message);
@@ -148,6 +165,10 @@ export class Telegram {
       const wait = (Number.isFinite(secs) ? secs : 30) * 1000;
       this.blockedUntil = Date.now() + wait;
       throw new Error('rate limited for ' + Math.round(wait / 1000) + 's');
+    }
+    if ((!r.ok || body.ok === false) && html && /parse entities|unsupported start tag|tag .* is unsupported/i.test(body.description || '')) {
+      this.log.warn('telegram: markup rejected (' + body.description + ') - resending as plain text');
+      return this.send(text, false);
     }
     if (!r.ok || body.ok === false) {
       // 400 "chat not found" and 403 "bot was kicked" are the two configuration

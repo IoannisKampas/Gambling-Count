@@ -1,7 +1,9 @@
 // The push-notification contract: what gets alerted, what must stay silent, and how
 // the queue behaves against Telegram's limits.
 // Run: node tools/alerts-test.mjs   (npm run test:alerts)
-import { createAlertState, scan, formatAlert, formatBatch } from '../src/alerts.mjs';
+import {
+  createAlertState, scan, formatAlert, formatAlertBlock, formatBatch, spinStrip,
+} from '../src/alerts.mjs';
 import { Telegram } from '../src/telegram.mjs';
 import { READINGS } from '../src/patterns.mjs';
 
@@ -105,16 +107,57 @@ section('configuration');
 }
 
 section('message text');
+const rule = (id) => READINGS.find((r) => r.id === id);
+const alert = (o = {}) => ({
+  table: 'Greek Roulette', provider: 'pragmatic', label: 'Monada', rule: rule('monada'),
+  count: -4, previous: -3, spins: [12, 7, 0, 4, 18, 3], armed: false, ...o,
+});
 {
-  const line = formatAlert({
-    table: 'Greek Roulette', provider: 'pragmatic', label: 'Monada',
-    count: -4, previous: -3, spins: [17, 4, 9], armed: false,
-  });
-  ok(line.includes('−4') && line.includes('Monada') && line.includes('Greek Roulette') &&
-     line.includes('17 4 9'), 'an alert line carries depth, reading, table and spins', line);
-  const batch = formatBatch([line, line], 4);
-  ok(batch.startsWith('2 pattern alerts') && batch.split('\n').length === 4,
-    'a batch is one header plus the lines', JSON.stringify(batch.slice(0, 40)));
+  const line = formatAlert(alert());
+  ok(line.includes('−4') && line.includes('Monada') && line.includes('Greek Roulette'),
+    'the plain one-line form carries depth, reading and table', line);
+  ok(formatAlert('already a string') === 'already a string', 'strings pass through');
+}
+{
+  // spins arrive newest first and must read oldest -> newest, coloured by group
+  const strip = spinStrip([12, 7, 0]);
+  ok(strip === '🔵0 🔵7 🟠12', 'the strip is oldest-first and group-coloured', strip);
+  ok(spinStrip([]) === '', 'no spins is empty, not a stray marker');
+}
+{
+  const block = formatAlertBlock(alert({ armed: true }));
+  const lines = block.split('\n');
+  ok(lines.length === 4, 'an armed block is four lines', String(lines.length));
+  ok(lines[0].includes('🔵') && lines[0].includes('<b>Monada</b>') && lines[0].includes('−4'),
+    'line 1: group colour, reading, depth', lines[0]);
+  ok(lines[1].includes('<b>Greek Roulette</b>'), 'line 2: the table in bold', lines[1]);
+  ok(lines[3].includes('next spin decides'), 'line 4: only when armed', lines[3]);
+  ok(formatAlertBlock(alert({ armed: false })).split('\n').length === 3,
+    'an unarmed block drops that line');
+  ok(formatAlertBlock(alert({ rule: rule('allin1'), label: 'All in 1' })).startsWith('⚪'),
+    'the All in pair take neither group colour');
+  ok(formatAlertBlock(alert({ rule: rule('monada2'), label: 'Monada 2' })).startsWith('🟠'),
+    'a group-B reading is orange');
+}
+{
+  // table names come from the operators; one with HTML in it must not break the message
+  const block = formatAlertBlock(alert({ table: 'Roulette <b>&</b> Co' }));
+  ok(block.includes('Roulette &lt;b&gt;&amp;lt;') === false, 'escaping is applied once');
+  ok(block.includes('&lt;b&gt;&amp;&lt;/b&gt;'), 'angle brackets and ampersands are escaped', block);
+}
+{
+  const one = formatBatch([alert()], 4, { tz: 'UTC' });
+  ok(one.startsWith('🎯 <b>−4 or deeper</b>'), 'the header states the threshold', one.split('\n')[0]);
+  ok(!one.includes('tables'), 'a single alert does not say "1 tables"');
+  const three = formatBatch([alert(), alert(), alert()], 4, { tz: 'UTC' });
+  ok(three.includes('3 tables'), 'several alerts are counted in the header');
+  ok(three.split('\n\n').length === 4, 'few alerts are separate blocks', String(three.split('\n\n').length));
+  const six = formatBatch(Array.from({ length: 6 }, () => alert()), 4, { tz: 'UTC' });
+  ok(six.split('\n').filter((l) => l.includes('Monada')).length === 6,
+    'a burst collapses to one line each');
+  ok(!six.includes('next spin decides'), 'the compact form drops the extra lines');
+  const linked = formatBatch([alert()], 4, { tz: 'UTC', link: 'http://localhost:3001/patterns' });
+  ok(linked.includes('📊 http://localhost:3001/patterns'), 'a link is appended when configured');
 }
 
 section('the queue against Telegram limits');
@@ -124,6 +167,9 @@ const fakeApi = (opts = {}) => {
     calls.push(JSON.parse(init.body));
     if (opts.rateLimitFirst && calls.length === 1) {
       return { ok: false, status: 429, json: async () => ({ ok: false, parameters: { retry_after: 0 } }) };
+    }
+    if (opts.badMarkupFirst && calls.length === 1) {
+      return { ok: false, status: 400, json: async () => ({ ok: false, description: "Bad Request: can't parse entities: unexpected end tag" }) };
     }
     if (opts.chatNotFound) {
       return { ok: false, status: 400, json: async () => ({ ok: false, description: 'Bad Request: chat not found' }) };
@@ -148,7 +194,8 @@ const quiet = { info() {}, warn() {}, error() {} };
   await sleep(80);
   ok(calls.length === 1, '12 alerts coalesce into one message', 'sent ' + calls.length);
   ok((calls[0].text.match(/alert \d+/g) || []).length === 12, 'all 12 lines are in it');
-  ok(calls[0].text.startsWith('12 pattern alerts'), 'the header counts them');
+  ok(calls[0].text.startsWith('🎯 <b>−4 or deeper</b>') && calls[0].text.includes('12 tables'),
+    'the header states the threshold and counts them', calls[0].text.split('\n')[0]);
 }
 {
   // the per-minute bucket holds the rest back rather than letting Telegram throttle us.
@@ -212,6 +259,26 @@ const quiet = { info() {}, warn() {}, error() {} };
   await tg.flush();
   ok(tg.streak === 0 && tg.backoffMs === 0 && tg.pending.length === 0,
     'a success resets the backoff and drains the queue', JSON.stringify(tg.status()));
+}
+{
+  // markup Telegram refuses must not cost us the alert
+  const { calls, fetchImpl } = fakeApi({ badMarkupFirst: true });
+  const tg = new Telegram({ token: 't', chatId: '-1', log: quiet, fetchImpl, flushMs: 60000 });
+  const r = await tg.send('<b>deep</b> count');
+  ok(r.ok && calls.length === 2, 'a rejected tag is resent as plain text', 'calls ' + calls.length);
+  ok(calls[0].parse_mode === 'HTML' && !calls[1].parse_mode, 'the retry drops parse_mode');
+  ok(calls[1].text === 'deep count', 'and the tags are stripped', calls[1].text);
+}
+{
+  // one message describes at most 12 alerts; the rest wait for the next
+  const { calls, fetchImpl } = fakeApi();
+  const tg = new Telegram({ token: 't', chatId: '-1', log: quiet, fetchImpl, flushMs: 60000 });
+  tg.enqueue(Array.from({ length: 20 }, (_, i) => 'line ' + i));
+  await tg.flush();
+  ok(calls.length === 1 && tg.pending.length === 8, 'a batch is capped at 12 per message',
+    'queued ' + tg.pending.length);
+  ok(calls[0].text.includes('line 11') && !calls[0].text.includes('line 12'),
+    'in order, oldest first');
 }
 {
   // the two configuration mistakes that read like bugs
