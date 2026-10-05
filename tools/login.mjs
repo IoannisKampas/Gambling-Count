@@ -14,7 +14,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as operators from '../src/operators.mjs';
-import { requireChrome, platformArgs, displayProblem, proxySummary } from '../src/chrome.mjs';
+import { requireChrome, platformArgs, displayProblem, proxySummary, stderrTail } from '../src/chrome.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PROFILE = path.join(ROOT, '.chrome-profile');
@@ -44,6 +44,21 @@ if (cfg.mint === 'gamePage' && !cfg.gameUrl) {
 }
 console.log('');
 
+// Chrome refuses a second instance on the same user-data-dir: it hands the URL to the
+// instance already running and exits at once, which from here looks exactly like
+// "Chrome never opened". The instance already running is usually the server's own mint
+// window, parked off-screen where nothing becomes visible. Say so instead.
+const running = await fetch('http://127.0.0.1:' + PORT + '/json/version')
+  .then((r) => r.json()).catch(() => null);
+if (running) {
+  console.error('  a Chrome is already using this profile (' + (running.Browser || 'unknown') + '),');
+  console.error('  so this window would be handed to it and nothing would appear.');
+  console.error('  Stop it first, then run this again:');
+  console.error('    pkill -f "node server.mjs"            # or Ctrl+C in its window');
+  console.error('    pkill -f "user-data-dir=' + PROFILE + '"');
+  process.exit(1);
+}
+
 const child = spawn(bin, [
   '--remote-debugging-port=' + PORT,
   '--user-data-dir=' + PROFILE,
@@ -51,7 +66,25 @@ const child = spawn(bin, [
   '--no-default-browser-check',
   ...platformArgs(),
   target,
-], { stdio: 'ignore', detached: true });
+], { stdio: ['ignore', 'ignore', 'pipe'], detached: true });
+
+// Chrome's own reason for dying, kept so an immediate exit is not silent.
+const why = stderrTail(child);
+let exited = null;
+child.on('exit', (code, signal) => { exited = signal || 'code ' + code; });
+
+await new Promise((r) => setTimeout(r, 3000));
+
+if (exited !== null) {
+  console.error('  Chrome did not stay open' + why());
+  console.error('');
+  console.error('  Usual causes: an orphaned Chrome still holds this profile, the profile');
+  console.error('  lock was left behind by a crash, or the display is not reachable.');
+  console.error('    pgrep -af "user-data-dir=' + PROFILE + '"');
+  console.error('    rm -f "' + PROFILE + '/SingletonLock"');
+  console.error('    echo $DISPLAY   # and:  ls /tmp/.X11-unix/');
+  process.exit(1);
+}
 
 // With SESSION_PROXY the browser's route out runs inside this process, so stay up
 // until the window is closed; otherwise hand the shell straight back.
@@ -59,5 +92,6 @@ if (proxySummary()) {
   console.log('  via proxy ' + proxySummary() + ' - leave this running until you close the window.\n');
   child.on('exit', () => process.exit(0));
 } else {
+  child.stderr.destroy();
   child.unref();
 }
