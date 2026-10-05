@@ -15,7 +15,10 @@
     "creds": "node tools/creds.mjs",
     "autologin": "node tools/auto-login.mjs",
     "probe:platform": "node tools/probe-platform.mjs",
-    "test:patterns": "node tools/patterns-test.mjs"
+    "test:patterns": "node tools/patterns-test.mjs",
+    "tg:chat": "node tools/telegram-chat.mjs",
+    "tg:test": "node tools/telegram-test.mjs",
+    "test:alerts": "node tools/alerts-test.mjs"
   },
   "dependencies": {
     "ws": "^8.21.3"

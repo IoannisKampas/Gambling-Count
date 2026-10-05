@@ -165,6 +165,49 @@ defaults the page loads fine and then never updates, which looks like an app bug
 
 ---
 
+## 6b. Telegram alerts
+
+Deep pattern counts can be pushed to a Telegram group. Off unless both variables are set.
+
+```bash
+# 1. @BotFather -> /newbot -> copy the token
+# 2. add the bot to the group, then send any message mentioning it
+# 3. find the group id (negative, -100…):
+export TELEGRAM_BOT_TOKEN='123456:AA…'
+npm run tg:chat
+
+# 4. set the chat id and prove it works before relying on it
+export TELEGRAM_CHAT_ID='-1001234567890'
+npm run tg:test
+```
+
+If `tg:chat` sees nothing, the bot's privacy mode is on and it cannot read group
+messages: BotFather → `/mybots` → the bot → Bot Settings → Group Privacy → Turn off.
+
+| variable | what it does |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` | the bot token. Belongs in `/etc/bj-monitor.env` (0600), never in the unit file |
+| `TELEGRAM_CHAT_ID` | the group id, negative for groups |
+| `ALERT_DEPTH` | alert at this depth or deeper. Default `4`, i.e. −4 |
+| `ALERT_READINGS` | comma-separated reading ids to alert on; unset means all ten |
+
+Two behaviours worth knowing, both deliberate:
+
+- **Replayed history never notifies** (`PATTERNS.md §8.3`). A table starts *latched* at
+  whatever count replaying its result window produced, so the first push for it comes
+  from a live spin that deepens the count — not from spins somebody else watched. The
+  same applies after a desync, whose counts are discarded rather than announced (§8.2).
+- **Alerts are coalesced.** A group accepts roughly 20 messages a minute, and a deep run
+  across 33 tables × 10 readings can produce a burst, so alerts are queued and sent as
+  one message every few seconds, metered under the limit. A failure backs off (doubling
+  to a minute) and keeps the alerts; a queue that never drains is capped at 200, newest
+  kept.
+
+`PATTERNS.md §8.5` recommends letting only one reading alert — `ALERT_READINGS=allin1`
+does that if ten readings turn out to be too noisy.
+
+---
+
 ## 7. When something is wrong
 
 | Symptom | Cause |
@@ -175,6 +218,9 @@ defaults the page loads fine and then never updates, which looks like an app bug
 | Mint fails, `signed out` | The profile's login lapsed, or you copied `.chrome-profile` from Windows. Redo §4. |
 | Page loads, never updates | nginx buffering — §6. |
 | `profile appears to be in use` | An orphaned Chrome holds the lock: `sudo -u bj pkill -f user-data-dir=.*Blackjack`. |
+| `telegram: Unauthorized` | the bot token is wrong. `npm run tg:test` checks it on its own. |
+| `telegram: … chat not found` | wrong `TELEGRAM_CHAT_ID`, or the bot is not in that group. `npm run tg:chat` lists what it can see. |
+| No alerts, but counts are deep | expected on a freshly started table: the count was replayed, so it is latched until a live spin deepens it (§8.3). |
 | Nothing in the store after a restore | The secret store's key file was not restored with it. Back up `~/.local/share/plfa-secrets/` as a unit, or set `PLFA_SECRET_KEY`. |
 
 **The risk that is not a bug:** the mint chain exists to get past Cloudflare and

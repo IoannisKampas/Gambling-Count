@@ -14,6 +14,8 @@ import { MultiFeed, MAX_CONCURRENT } from './src/multifeed.mjs';
 import { DgaLobby, mergeResults } from './src/dga.mjs';
 import { PlaytechLobby, isRoulette as isPtRoulette } from './src/playtech.mjs';
 import { PatternTracker, GROUP_A, GROUP_B, READINGS, READING_IDS } from './src/patterns.mjs';
+import { Telegram } from './src/telegram.mjs';
+import * as alerts from './src/alerts.mjs';
 import { SessionProvider } from './src/session.mjs';
 import { proxySummary } from './src/chrome.mjs';
 import * as operators from './src/operators.mjs';
@@ -36,6 +38,13 @@ const HOST = process.env.HOST || '0.0.0.0';
 const DEFAULT_OPERATOR = 'stoiximan';
 // how often to check each token is still alive and re-mint it if not
 const SESSION_CHECK_MS = Number(process.env.SESSION_CHECK_MS || 4 * 60 * 1000);
+
+// Telegram push. ALERT_DEPTH is a positive number: 4 means alert at −4 or deeper.
+// ALERT_READINGS limits it to a comma-separated list of reading ids (see READINGS);
+// unset means all ten, which is noisier than PATTERNS.md §8.5 advises but is what was
+// asked for here. Nothing is pushed at all unless both Telegram variables are set.
+const ALERT_DEPTH = Number(process.env.ALERT_DEPTH || 4);
+const ALERT_READINGS = (process.env.ALERT_READINGS || '').split(',').map((s) => s.trim()).filter(Boolean);
 
 // ---------------------------------------------------------------- catalogue ----
 // Each operator's lobby returns only the tables that operator carries, so the wall
@@ -667,6 +676,16 @@ function rouletteTables(want) {
 // shown but never notify.
 const patterns = new PatternTracker();
 
+// Push notifications for deep counts. The latch that stops replayed history being
+// announced lives in src/alerts.mjs; the queueing and rate limiting in src/telegram.mjs.
+const telegram = new Telegram({
+  token: process.env.TELEGRAM_BOT_TOKEN,
+  chatId: process.env.TELEGRAM_CHAT_ID,
+  depth: ALERT_DEPTH,
+  log,
+});
+const alertState = alerts.createAlertState();
+
 function patternTick() {
   for (const t of rouletteTables(null)) {
     // results arrive NEWEST FIRST; the tracker reverses before replaying (§5, §8.1)
@@ -675,6 +694,21 @@ function patternTick() {
       operators: t.operators, variant: t.variant, open: t.open,
     }, (t.results || []).map((r) => ({ n: r.n, id: r.gameId ?? null })));
   }
+
+  // Alerting runs off the same rows the dashboard is served, in the same tick, so a
+  // push can never describe a count the wall does not show.
+  if (!telegram.configured) return;
+  const hits = alerts.scan(alertState, patternRows(null), {
+    depth: ALERT_DEPTH,
+    readings: READINGS,
+    only: ALERT_READINGS.length ? ALERT_READINGS : null,
+  });
+  if (!hits.length) return;
+  for (const h of hits) {
+    log.info('alert ' + h.label + ' ' + h.count + ' on ' + h.table +
+      (h.previous ? ' (was ' + h.previous + ')' : ''));
+  }
+  telegram.enqueue(hits.map(alerts.formatAlert));
 }
 
 function patternRows(want) {
@@ -720,6 +754,8 @@ async function routeRest(req, res, url) {
       // the ten readings and their rules, so the page never restates the spec
       readings: READINGS,
       alerting: 'allin1',                 // PATTERNS.md §8.5 - one reading alerts
+      push: { ...telegram.status(), depth: ALERT_DEPTH,
+        readings: ALERT_READINGS.length ? ALERT_READINGS : 'all' },
       at: Date.now(),
     });
   }
@@ -957,6 +993,11 @@ server.listen(PORT, HOST, async () => {
   console.log('  logging to ' + log.path + (RECORD_DIR ? '; recording to ' + RECORD_DIR : '') + '\n');
   log.info('server started on :' + PORT);
   if (proxySummary()) log.info('browser traffic via proxy ' + proxySummary());
+  log.info(telegram.configured
+    ? 'telegram alerts on: −' + ALERT_DEPTH + ' or deeper, ' +
+      (ALERT_READINGS.length ? ALERT_READINGS.join('/') : 'all ten readings') +
+      ', chat ' + process.env.TELEGRAM_CHAT_ID
+    : 'telegram alerts off (set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)');
 
   // Restore every operator session persisted from a previous run, so a restart comes
   // back with all accounts live. Env JSESSIONID still seeds the default operator.
