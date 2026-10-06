@@ -94,6 +94,17 @@ section{padding:18px 20px 4px}
 .bell:hover{opacity:.85;filter:none;border-color:var(--border-hover)}
 .bell.on{opacity:1;filter:none;border-color:var(--warn);
   background:color-mix(in srgb,var(--warn) 16%,transparent)}
+/* some readings armed on this table, not all */
+.bell.part{opacity:.9;filter:none;border-color:color-mix(in srgb,var(--warn) 60%,transparent);
+  background:color-mix(in srgb,var(--warn) 7%,transparent)}
+/* one reading on one table: out of the way until the row is hovered, or it is armed */
+.rbell{font-size:10px;line-height:1;padding:2px 4px;margin-left:6px;border-radius:4px;
+  cursor:pointer;flex:none;border:1px solid transparent;background:none;opacity:0;
+  filter:grayscale(1)}
+.cell:hover .rbell,.solo .rbell{opacity:.55}
+.rbell:hover{opacity:1 !important;filter:none;border-color:var(--border-hover)}
+.rbell.on{opacity:1;filter:none;border-color:var(--warn);
+  background:color-mix(in srgb,var(--warn) 16%,transparent)}
 
 /* the current run, shown as a group letter — §2.1 keeps letter and colour together */
 .runmark{font-family:var(--f-mono);font-weight:700;font-size:11px;padding:2px 6px;border-radius:3px;
@@ -242,7 +253,10 @@ let aSet = new Set(), cSet = new Set();
 let armedOnly = false;
 // which tables push to Telegram. Server-side state (data/alerts.json), not localStorage:
 // the pushes are sent by the server, so the choice has to be somewhere it can see.
-let pushTables = new Set();
+// table -> '*' (every reading) | [readingId, ...]. Per reading, because "Andreas Deluxe
+// on this one wheel only" is a normal thing to want: it fires far more often than the run
+// readings, so arming it everywhere buries them.
+let pushArmed = {}, pushPairs = 0;
 let pushAll = false, pushConfigured = false, pushDepth = 4, pushDepths = {};
 let bellsOnly = false;
 let focusId = '';          // '' = show every reading on every card
@@ -289,6 +303,21 @@ const depthCls = (c) => (c <= -4 ? 'c d4' : c <= -2 ? 'c d2' : 'c' + (c === 0 ? 
 const fmt = (c) => (c === 0 ? '0' : '−' + Math.abs(c));
 const sideCls = (r) => (r.side === 'A' ? 'gA' : r.side === 'B' ? 'gB' : r.side === 'C' ? 'gC' : '');
 const reading = (id) => readings.find((r) => r.id === id) || null;
+const armedFor = (tableId, readingId) => {
+  if (pushAll) return true;
+  const v = pushArmed[tableId];
+  if (!v) return false;
+  return v === '*' ? true : v.includes(readingId);
+};
+// 'all' | 'some' | 'none', for the card's own bell
+const armState = (tableId) => {
+  if (pushAll) return 'all';
+  const v = pushArmed[tableId];
+  if (!v) return 'none';
+  if (v === '*') return 'all';
+  return v.length >= readings.length ? 'all' : 'some';
+};
+const armedSomewhere = (tableId) => armState(tableId) !== 'none';
 // the readings in display order: a pair per row (§1.1), deepest arming last
 const PAIRS = [['allin1','allin2'],['monada','monada2'],['diada','diada2'],
   ['triada','triada2'],['tetrada','tetrada2'],['pentada','pentada2'],['enaduo','enaduo2'],
@@ -331,7 +360,7 @@ const streakText = (r, p) => {
 };
 
 // one compact line per reading: name, armed/run state, count
-function cell(r, p){
+function cell(r, p, t){
   const armed = p.phase === 'INTERRUPTED';
   const streak = isStreak(r);
   const state = streak ? streakText(r, p)
@@ -352,16 +381,29 @@ function cell(r, p){
       (p.lastEvent && p.lastEvent !== 'NONE'
         ? '<span class="evt ' + p.lastEvent + '">' + p.lastEvent + '</span>' : '') +
     '</span>' +
+    readingBell(r, t) +
   '</div>';
 }
 
+// Arms one reading on one table - the control that answers "Andreas Deluxe on this wheel
+// only". The card's own bell is the all-or-nothing shortcut over the same thing.
+function readingBell(r, t){
+  if (!t) return '';
+  const on = armedFor(t.id, r.id);
+  const why = pushAll ? 'ALERT_ALL=1: everything pushes'
+    : on ? 'pushing ' + r.label + ' on this table — click to stop'
+         : 'push ' + r.label + ' on this table';
+  return '<button class="rbell' + (on ? ' on' : '') + '" data-bell-table="' + t.id +
+    '" data-bell-reading="' + r.id + '" title="' + why + '">🔔</button>';
+}
+
 // the chosen reading, with everything known about it
-function solo(r, p){
+function solo(r, p, t){
   const armed = p.phase === 'INTERRUPTED';
   return '<div class="solo">' +
     '<div class="' + depthCls(p.count) + ' big">' + fmt(p.count) + '</div>' +
     '<div class="col">' +
-      '<div class="lab ' + sideCls(r) + '">' + r.label +
+      '<div class="lab ' + sideCls(r) + '">' + r.label + readingBell(r, t) +
         (r.id === alerting ? ' · alerting' : '') +
         (p.lastEvent && p.lastEvent !== 'NONE'
           ? '<span class="evt ' + p.lastEvent + '">' + p.lastEvent + '</span>' : '') + '</div>' +
@@ -390,14 +432,20 @@ function card(t){
   const base = t.reads.allin1 || t.reads[readings[0] && readings[0].id];
   const run = base && base.runGroup;
   const body = focusId && reading(focusId)
-    ? solo(reading(focusId), t.reads[focusId])
+    ? solo(reading(focusId), t.reads[focusId], t)
     : '<div class="reads">' + ORDER.map((id) => {
-        const r = reading(id); return r && t.reads[id] ? cell(r, t.reads[id]) : '';
+        const r = reading(id); return r && t.reads[id] ? cell(r, t.reads[id], t) : '';
       }).join('') + '</div>';
-  const on = pushAll || pushTables.has(t.id);
-  const bell = '<button class="bell' + (on ? ' on' : '') + '" data-bell="' + t.id + '" title="' +
-    (pushAll ? 'ALERT_ALL=1: every table pushes' : on ? 'pushing to Telegram — click to stop' :
-      'click to push alerts for this table') + '">🔔</button>';
+  const state8 = armState(t.id);
+  const armedList = pushArmed[t.id];
+  const which = state8 === 'all' ? 'every reading'
+    : state8 === 'some' ? (armedList || []).map((id) => (reading(id) || {}).label || id).join(', ')
+    : 'nothing';
+  const bell = '<button class="bell' + (state8 === 'all' ? ' on' : state8 === 'some' ? ' part' : '') +
+    '" data-bell="' + t.id + '" title="' +
+    (pushAll ? 'ALERT_ALL=1: every table pushes'
+             : 'Telegram: ' + which + ' — click to arm every reading, or none') +
+    '">🔔</button>';
   return { key: t.id, cls: 'tbl' + (t.desynced ? ' desync' : ''), html:
     '<div class="thead">' +
       bell +
@@ -445,7 +493,7 @@ function render(){
       if (rules.hideNoResults && n === 0) return false;
       if (rules.minSpins && n < rules.minSpins) return false;
     }
-    if (bellsOnly && !(pushAll || pushTables.has(t.id))) return false;
+    if (bellsOnly && !armedSomewhere(t.id)) return false;
     if (prov && t.provider !== prov) return false;
     if (q && !t.name.toLowerCase().includes(q)) return false;
     if (minc && depthOf(t) < minc) return false;
@@ -466,7 +514,7 @@ function render(){
   $('#empty').hidden = rows.length > 0;
   // an empty board has three quite different causes; saying which saves a hunt
   $('#empty').textContent = !tables.length ? 'No tables tracked yet — waiting for the roulette feed'
-    : (bellsOnly && !pushTables.size && !pushAll)
+    : (bellsOnly && !Object.keys(pushArmed).length && !pushAll)
       ? 'No tables are armed for Telegram yet — click 🔔 on a card, or “Arm shown”'
       : 'No tables match these filters';
   patch($('#board'), rows.map(card));
@@ -482,7 +530,8 @@ function render(){
   $('#follow').textContent = followSettings ? 'Following settings' : 'All tables';
   const pushNote = !pushConfigured ? 'push off'
     : pushAll ? '🔔 every table'
-    : pushTables.size ? '🔔 ' + pushTables.size + ' armed'
+    : Object.keys(pushArmed).length
+      ? '🔔 ' + Object.keys(pushArmed).length + ' tables, ' + pushPairs + ' readings'
     : '🔔 none selected';
   $('#tally').textContent = tables.length + ' tracked · ' + scope + ' · ' + pushNote +
     (followSettings && hidden.size ? ' · ' + hidden.size + ' off in settings' : '');
@@ -509,46 +558,52 @@ $('#bellsonly').addEventListener('click', () => {
 // Replace the push selection with the tables currently listed. That is how the table
 // picks on /settings reach the server: they are a browser-side filter, so whatever they
 // leave on screen is the selection you meant, and one click sends it over.
-async function setSelection(ids){
+async function post(body){
   try {
     const r = await fetch('/api/alerts/tables', {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ tables: ids }),
+      body: JSON.stringify(body),
     });
     const j = await r.json();
-    pushTables = new Set(j.tables || []);
+    if (j.armed) { pushArmed = j.armed; pushPairs = j.pairs || 0; }
   } catch {}
   render();
 }
+// "Arm shown" follows the tab you are on: with a reading in focus it arms THAT reading on
+// the listed tables and leaves their other readings alone, which is how you get one
+// reading on one wheel. With no tab chosen it arms every reading on them.
 $('#bellshown').addEventListener('click', () => {
   const ids = [...$('#board').children].map((el) => el.dataset.key);
   if (!ids.length) return;
   if (bellsOnly) { bellsOnly = false; $('#bellsonly').classList.remove('on'); savePrefs(); }
-  setSelection(ids);
+  if (focusId) {
+    const next = { ...pushArmed };
+    for (const id of ids) {
+      if (next[id] === '*') continue;                  // already armed for everything
+      const set = new Set(next[id] || []);
+      set.add(focusId);
+      next[id] = [...set];
+    }
+    post({ tables: next });
+  } else {
+    post({ tables: Object.fromEntries(ids.map((id) => [id, '*'])) });
+  }
 });
-$('#bellclear').addEventListener('click', () => setSelection([]));
+$('#bellclear').addEventListener('click', () => post({ clear: true }));
 // Toggling a bell writes through to the server and updates the card immediately, so the
 // click feels instant even though the next poll is up to a second away.
-$('#board').addEventListener('click', async (e) => {
+$('#board').addEventListener('click', (e) => {
+  // a bell inside a reading's row arms just that reading on that table
+  const cellBell = e.target.closest('.rbell');
+  if (cellBell) {
+    const { bellTable, bellReading } = cellBell.dataset;
+    post({ id: bellTable, reading: bellReading, on: !armedFor(bellTable, bellReading) });
+    return;
+  }
+  // the bell in the card header arms the whole table, or clears it
   const b = e.target.closest('.bell');
   if (!b) return;
-  const id = b.dataset.bell;
-  const on = !pushTables.has(id);
-  if (on) pushTables.add(id); else pushTables.delete(id);
-  b.classList.toggle('on', on);
-  render();
-  try {
-    const r = await fetch('/api/alerts/tables', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ id, on }),
-    });
-    const j = await r.json();
-    if (j.tables) pushTables = new Set(j.tables);
-  } catch {
-    // put it back if the server never heard about it
-    if (on) pushTables.delete(id); else pushTables.add(id);
-  }
-  render();
+  post({ id: b.dataset.bell, on: armState(b.dataset.bell) !== 'all' });
 });
 $('#tabs').addEventListener('click', (e) => {
   const tab = e.target.closest('.tab'); if (!tab) return;
@@ -568,7 +623,8 @@ async function poll(){
     if (j.readings) readings = j.readings;
     if (j.alerting) alerting = j.alerting;
     if (j.push) {
-      pushTables = new Set(j.push.tables || []);
+      pushArmed = j.push.armed || {};
+      pushPairs = j.push.pairs || 0;
       pushAll = !!j.push.all;
       pushConfigured = !!j.push.configured;
       pushDepth = j.push.depth || 4;

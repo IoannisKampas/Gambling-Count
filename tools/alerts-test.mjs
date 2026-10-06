@@ -240,27 +240,79 @@ section('a reading can set its own push depth');
     formatBatch(hit, 4, { tz: 'UTC' }).split('\n')[0]);
 }
 
+section('arming one reading on one table');
+{
+  const st = createAlertState();
+  const two = [row({}, { id: 'wheel1' }), row({}, { id: 'wheel2' })];
+  // Andreas Deluxe on wheel1 only; wheel2 armed for Monada only
+  const allow = (table, rdg) =>
+    (table === 'wheel1' && rdg === 'andreas') || (table === 'wheel2' && rdg === 'monada');
+  const o = { ...opts, allow };
+  scan(st, two, o);
+  const hits = scan(st, [
+    row({ andreas: -4, monada: -4 }, { id: 'wheel1' }),
+    row({ andreas: -4, monada: -4 }, { id: 'wheel2' }),
+  ], o);
+  ok(hits.length === 2, 'two alerts, one per armed pair', String(hits.length));
+  const pairs = hits.map((h) => h.tableId + '/' + h.reading).sort().join(' ');
+  ok(pairs === 'wheel1/andreas wheel2/monada',
+    'each table only pushes the reading armed on it', pairs);
+}
+{
+  // a pair armed later starts latched, exactly as a newly seen table does (§8.3)
+  const st = createAlertState();
+  const none = { ...opts, allow: () => false };
+  scan(st, [row({ andreas: -9 }, { id: 'w' })], none);
+  const justArmed = { ...opts, allow: (t, r) => r === 'andreas' };
+  ok(scan(st, [row({ andreas: -9 }, { id: 'w' })], justArmed).length === 0,
+    'arming a reading that is already deep stays silent');
+  ok(scan(st, [row({ andreas: -10 }, { id: 'w' })], justArmed).length === 1,
+    'and its next deepening pushes');
+}
+
 section('the selection survives a restart');
 {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'alertsel-'));
   const file = path.join(dir, 'alerts.json');
   const quietLog = { info() {}, warn() {}, error() {} };
 
+  const ALL_IDS = ['monada', 'diada', 'andreas'];
   const a = new AlertSelection({ file, log: quietLog });
   ok(a.size === 0, 'a missing file is an empty selection');
-  a.toggle('t1', true);
-  a.toggle('t2', true);
-  a.toggle('t1', false);
-  ok(a.list().join() === 't2', 'toggling on and off', a.list().join());
+
+  a.toggleTable('t1', true);
+  ok(a.has('t1', 'monada') && a.has('t1', 'andreas'), 'a table armed whole covers every reading');
+  ok(a.readingsFor('t1') === '*', "and is stored as '*', not a frozen list", String(a.readingsFor('t1')));
+
+  a.toggleReading('t2', 'andreas', true, ALL_IDS);
+  ok(a.has('t2', 'andreas') && !a.has('t2', 'monada'),
+    'one reading on one table arms only that pair');
+  ok(a.list().sort().join() === 't1,t2', 'both tables are listed', a.list().sort().join());
+
+  // turning one reading off on an all-armed table expands it to the explicit rest
+  a.toggleReading('t1', 'monada', false, ALL_IDS);
+  ok(!a.has('t1', 'monada') && a.has('t1', 'diada') && a.has('t1', 'andreas'),
+    'disarming one reading leaves the others armed', JSON.stringify(a.readingsFor('t1')));
+  // and arming the last missing one collapses it back
+  a.toggleReading('t1', 'monada', true, ALL_IDS);
+  ok(a.readingsFor('t1') === '*', 'arming them all collapses back to every reading');
 
   const b = new AlertSelection({ file, log: quietLog });
-  ok(b.list().join() === 't2', 'reloaded from disk after a restart', b.list().join());
+  ok(b.has('t1', 'diada') && b.has('t2', 'andreas') && !b.has('t2', 'diada'),
+    'reloaded from disk after a restart', JSON.stringify(b.map()));
+  ok(b.pairs(3) === 4, 'pairs() counts reading slots', String(b.pairs(3)));
 
-  b.set(['x', 'y', '', null, 7]);
-  ok(b.list().join() === 'x,y', 'set() replaces, and drops anything that is not an id', b.list().join());
-  ok(JSON.parse(fs.readFileSync(file, 'utf8')).tables.join() === 'x,y', 'the file matches');
+  b.set({ x: '*', y: ['andreas'], z: [] });
+  ok(JSON.stringify(b.map()) === JSON.stringify({ x: '*', y: ['andreas'] }),
+    'set() replaces, and drops a table with no readings', JSON.stringify(b.map()));
   b.clear();
   ok(b.size === 0 && new AlertSelection({ file, log: quietLog }).size === 0, 'clear() empties it');
+
+  // the first version of this file stored a plain array; those tables were armed for all
+  fs.writeFileSync(file, JSON.stringify({ tables: ['old1', 'old2'] }));
+  const legacy = new AlertSelection({ file, log: quietLog });
+  ok(legacy.has('old1', 'monada') && legacy.readingsFor('old2') === '*',
+    'an older selection file loads as armed for every reading');
 
   fs.writeFileSync(file, '{ this is not json');
   const c = new AlertSelection({ file, log: quietLog });

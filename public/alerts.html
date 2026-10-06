@@ -171,7 +171,7 @@ footer{padding:20px;font-family:var(--f-mono);font-size:9px;letter-spacing:.12em
 <script>
 const $ = (s) => document.querySelector(s);
 let entries = [], stats = {}, tg = {}, readings = [], depths = {}, tz = 'Europe/Athens';
-let armed = [], pushAll = false, live = true;
+let armed = {}, armedTables = 0, armedPairs = 0, pushAll = false, live = true;
 let aSet = new Set(), cSet = new Set();
 
 const PREFS = 'alertpage.prefs';
@@ -222,8 +222,8 @@ function statCards(){
     ['alerts pushed', s.sent || 0, 'good', 'last ' + (s.kept || 0) + ' kept'],
     ['waiting', s.held || 0, (s.held || 0) ? 'warn' : '', (t.queued || 0) + ' in the queue'],
     ['dropped', s.dropped || 0, (s.dropped || 0) ? 'bad' : '', 'queue never drained'],
-    ['tables armed', pushAll ? 'ALL' : armed.length, armed.length || pushAll ? '' : 'warn',
-      pushAll ? 'ALERT_ALL=1' : 'bell on /patterns'],
+    ['tables armed', pushAll ? 'ALL' : armedTables, armedTables || pushAll ? '' : 'warn',
+      pushAll ? 'ALERT_ALL=1' : armedPairs + ' reading slots'],
   ];
   const html = cards.map(([k, v, cls, sub]) =>
     '<div class="stat"><div class="k">' + k + '</div><div class="v ' + (cls || '') + '">' + v + '</div>' +
@@ -307,7 +307,9 @@ async function poll(){
     tg = j.telegram || {};
     readings = j.readings || [];
     depths = j.depths || {};
-    armed = j.armed || [];
+    armed = j.armed || {};
+    armedTables = j.armedTables || 0;
+    armedPairs = j.armedPairs || 0;
     pushAll = !!j.all;
     tz = j.tz || tz;
     render();

@@ -722,18 +722,21 @@ const alertState = alerts.createAlertState();
 // which this process cannot see and which is gone whenever no page is open.
 const alertTables = new AlertSelection({ file: path.join(ROOT, 'data/alerts.json'), log });
 
-// Which table ids may push right now: the saved selection, plus anything ALERT_TABLES
-// names (by id or by table name, so a VPS can be configured without a browser).
-function alertableIds(rows) {
-  if (ALERT_ALL) return null;                       // null means "no filter"
-  const ids = new Set(alertTables.list());
+// What may push right now, as (table, reading) -> boolean: the saved selection, plus any
+// table ALERT_TABLES names (by id or by name, so a VPS can be configured without a
+// browser) which counts as armed for every reading. Returns null when everything is
+// allowed (ALERT_ALL) and false when nothing is armed at all.
+function alertGate(rows) {
+  if (ALERT_ALL) return null;
+  const envIds = new Set();
   if (ALERT_TABLES.length) {
     const named = new Set(ALERT_TABLES.map((s) => s.toLowerCase()));
     for (const r of rows) {
-      if (named.has(r.id.toLowerCase()) || named.has((r.name || '').toLowerCase())) ids.add(r.id);
+      if (named.has(r.id.toLowerCase()) || named.has((r.name || '').toLowerCase())) envIds.add(r.id);
     }
   }
-  return ids;
+  if (!alertTables.size && !envIds.size) return false;
+  return (tableId, readingId) => envIds.has(tableId) || alertTables.has(tableId, readingId);
 }
 
 function patternTick() {
@@ -749,13 +752,13 @@ function patternTick() {
   // push can never describe a count the wall does not show.
   if (!telegram.configured) return;
   const rows = patternRows(null);
-  const allowed = alertableIds(rows);
-  if (allowed && !allowed.size) return;   // nothing selected: nothing to push
+  const gate = alertGate(rows);
+  if (gate === false) return;              // nothing armed: nothing to push
   const hits = alerts.scan(alertState, rows, {
     depth: ALERT_DEPTH,
     readings: READINGS,
     only: ALERT_READINGS.length ? ALERT_READINGS : null,
-    onlyTables: allowed,
+    allow: gate,                           // null means every table and reading
     depths: ALERT_DEPTHS,
   });
   if (!hits.length) return;
@@ -818,7 +821,9 @@ async function routeRest(req, res, url) {
         depths: Object.fromEntries(READINGS.map((r) =>
           [r.id, ALERT_DEPTHS[r.id] || r.alertDepth || ALERT_DEPTH])),
         readings: ALERT_READINGS.length ? ALERT_READINGS : 'all',
-        tables: alertTables.list(),       // the UI draws a bell per table from this
+        tables: alertTables.list(),       // tables with anything armed
+        armed: alertTables.map(),         // table -> '*' | [readingId], for the bells
+        pairs: alertTables.pairs(READINGS.length),
         all: ALERT_ALL,
         fromEnv: ALERT_TABLES },
       at: Date.now(),
@@ -837,7 +842,9 @@ async function routeRest(req, res, url) {
       telegram: telegram.status(),
       readings: READINGS,
       depths,
-      armed: alertTables.list(),
+      armed: alertTables.map(),          // table -> '*' | [readingId]
+      armedTables: alertTables.list().length,
+      armedPairs: alertTables.pairs(READINGS.length),
       all: ALERT_ALL,
       tz: process.env.ALERT_TZ || 'Europe/Athens',
       at: Date.now(),
@@ -850,13 +857,24 @@ async function routeRest(req, res, url) {
   if (url.pathname === '/api/alerts/tables' && req.method === 'POST') {
     let body = {};
     try { body = await readJson(req); } catch {}
-    let list;
-    if (body.clear) list = alertTables.clear();
-    else if (Array.isArray(body.tables)) list = alertTables.set(body.tables);
-    else if (body.id) list = alertTables.toggle(String(body.id), body.on);
-    else return json(res, 400, { error: 'send { id, on }, { tables: [...] } or { clear: true }' });
-    log.info('alert selection: ' + list.length + ' table' + (list.length === 1 ? '' : 's'));
-    return json(res, 200, { ok: true, tables: list });
+    let map;
+    if (body.clear) map = alertTables.clear();
+    else if (body.tables) map = alertTables.set(body.tables);
+    else if (body.id && body.reading) {
+      map = alertTables.toggleReading(String(body.id), String(body.reading), body.on, READING_IDS);
+    } else if (body.id) map = alertTables.toggleTable(String(body.id), body.on);
+    else {
+      return json(res, 400, {
+        error: 'send { id, on }, { id, reading, on }, { tables: [...] | {id: readings} } or { clear: true }',
+      });
+    }
+    const n = Object.keys(map).length;
+    log.info('alert selection: ' + n + ' table' + (n === 1 ? '' : 's') + ', ' +
+      alertTables.pairs(READINGS.length) + ' reading slots armed');
+    return json(res, 200, {
+      ok: true, tables: alertTables.list(), armed: map,
+      pairs: alertTables.pairs(READINGS.length),
+    });
   }
 
   // Supply a JSESSIONID for one operator, copied from that casino's signed-in

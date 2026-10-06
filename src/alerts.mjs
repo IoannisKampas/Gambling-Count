@@ -40,12 +40,16 @@ const keyOf = (tableId, readingId) => tableId + '|' + readingId;
 //   readings the READINGS metadata, carried into each alert for the message text
 //   only     Set/array of reading ids to alert on, or null for every reading
 //   onlyTables  Set/array of table ids that may push, or null for every table
+//   allow       (tableId, readingId) => boolean, for a per-table-per-reading selection
+//               ("Andreas Deluxe on this one wheel only"). Takes precedence over
+//               `onlyTables`, which is the whole-table shorthand.
 //
-// A table outside `onlyTables` is skipped entirely rather than tracked-but-muted, so
-// selecting one later starts it latched like any newly seen table (§8.3) - you get its
-// next live deepening, never a backlog of counts from while it was off.
+// A (table, reading) pair that is not allowed is skipped entirely rather than
+// tracked-but-muted, so arming it later starts it latched like anything newly seen
+// (§8.3) - you get its next live deepening, never a backlog from while it was off.
 export function scan(state, tables, {
   depth = DEFAULT_DEPTH, readings = [], only = null, onlyTables = null, depths = null,
+  allow = null,
 } = {}) {
   const want = only ? new Set(only) : null;
   const wantTables = onlyTables ? new Set(onlyTables) : null;
@@ -57,6 +61,7 @@ export function scan(state, tables, {
     if (wantTables && !wantTables.has(t.id)) continue;
     for (const [id, p] of Object.entries(t.reads)) {
       if (want && !want.has(id)) continue;
+      if (allow && !allow(t.id, id)) continue;
       const key = keyOf(t.id, id);
       const prev = state.get(key);
       const count = p.count;
