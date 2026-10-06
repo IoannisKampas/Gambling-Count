@@ -70,6 +70,12 @@ const SIM_STEPS = Number(process.env.SIM_STEPS || 4);
 // picks rather than two. SIM_ALL_TABLES=1 ignores them and plays every table.
 const SIM_ALL_TABLES = process.env.SIM_ALL_TABLES === '1';
 const SIM_PATTERNS = (process.env.SIM_PATTERNS || '').split(',').map((s) => s.trim()).filter(Boolean);
+// Per-reading simulation depths, e.g. SIM_DEPTHS='monada=9'. Separate from ALERT_DEPTHS:
+// the notification and the paper bet are triggered at different counts on purpose.
+const SIM_DEPTHS = Object.fromEntries((process.env.SIM_DEPTHS || '').split(',')
+  .map((x) => x.split('=').map((y) => y.trim()))
+  .filter(([id, n]) => id && Number(n) > 0)
+  .map(([id, n]) => [id, Number(n)]));
 const ALERT_ALL = process.env.ALERT_ALL === '1';
 
 // ---------------------------------------------------------------- catalogue ----
@@ -723,7 +729,7 @@ const paper = new PaperBook({
   unit: SIM_UNIT,
   steps: SIM_STEPS,
   patterns: SIM_PATTERNS.length ? SIM_PATTERNS : DEFAULT_PATTERNS,
-  depths: ALERT_DEPTHS,
+  depths: SIM_DEPTHS,
   readings: READINGS,
   // only a pair that would raise an alert is played: the table armed with its bell on
   // /patterns, and the pattern switched on in Settings
@@ -1254,6 +1260,10 @@ server.listen(PORT, HOST, async () => {
   log.info('paper sim ' + (paper.running ? 'RUNNING' : 'stopped') + ': ' +
     Math.round(paper.cash) + ' of ' + paper.budget + ', ' + paper.patterns.length +
     ' patterns, ' + paper.unit + ' per number x ' + paper.steps + ' steps (toggle at /sim)');
+  log.info('sim depths: ' + paper.patterns.map((id) => {
+    const r = READINGS.find((x) => x.id === id);
+    return r.label + ' −' + paper.depthFor(id);
+  }).join(' · '));
   if (!telegram.configured) {
     log.info('telegram alerts off (set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)');
   } else {

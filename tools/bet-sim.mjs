@@ -9,7 +9,8 @@
 // /sim: this tool only supplies spins and aggregates. A second copy of the rules would
 // eventually disagree with the live one about what was bet and why.
 //
-//   * A pattern's alert depth is the trigger (All in 1 at -11, Monada at -12, ...).
+//   * A pattern's SIMULATION depth is the trigger (All in 1 at -11, Monada at -12, ...),
+//     which is shallower than the depth it pushes a notification at.
 //   * Then bet on the count BREAKING: `unit` on every number of the group that resets it.
 //   * Double on a loss - 5/10/20/40 per number - and stop at a win, or after the fourth.
 //
@@ -145,7 +146,8 @@ if (CFG.mode === 'per' || CFG.mode === 'both') {
     }
     const settled = wins + losses;
     console.log('  ' + (LABEL.get(id) || id).padEnd(12) +
-      ('-' + (CFG.depths[id] || READINGS.find((r) => r.id === id).alertDepth)).padStart(4) + '  ' +
+      ('-' + (CFG.depths[id] || (() => { const r = READINGS.find((x) => x.id === id);
+        return r.simDepth || r.alertDepth; })())).padStart(4) + '  ' +
       (seq / CFG.runs).toFixed(1).padStart(9) + '  ' +
       (settled ? pct(wins / settled) : '—').padStart(6) + '  ' +
       money(median(nets)).padStart(11) + '  ' +

@@ -94,9 +94,12 @@ export class PaperBook {
     for (let k = 1; k <= this.steps; k++) total += this.stakeAt(k) * size;
     return total;
   }
+  // The simulation acts at the reading's simDepth, which is deliberately shallower than
+  // the depth it pushes a notification at: a push should be rare, a simulation needs
+  // enough sequences to say anything. SIM_DEPTHS overrides it per reading.
   depthFor(id) {
     const r = this.rules.get(id);
-    return this.depths[id] || (r && r.alertDepth) || 4;
+    return this.depths[id] || (r && (r.simDepth || r.alertDepth)) || 4;
   }
 
   reset({ keepRunning = false } = {}) {

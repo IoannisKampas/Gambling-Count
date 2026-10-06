@@ -150,10 +150,10 @@ section('every reading pushes at its own depth');
   // The thresholds as specified. A table here rather than a loop over READINGS on
   // purpose: a typo in the rules should fail this, not be mirrored by it.
   const WANT = {
-    allin1: 11, allin2: 11,
-    monada: 12, monada2: 12,
-    diada: 10, diada2: 10,
-    triada: 8, triada2: 8,
+    allin1: 15, allin2: 15,
+    monada: 14, monada2: 14,
+    diada: 13, diada2: 13,
+    triada: 11, triada2: 11,
     enaduo: 6, enaduo2: 6,
     serie1: 11, serie2: 11,
     andreas: 8,
@@ -175,6 +175,32 @@ section('every reading pushes at its own depth');
   }
 }
 
+section('the push depth and the simulation depth are separate');
+{
+  // A notification should be rare; the simulation needs sequences to judge. Where both
+  // are set, the push depth is the deeper of the two.
+  const pairs = [['allin1', 15, 11], ['allin2', 15, 11], ['monada', 14, 12], ['monada2', 14, 12],
+    ['diada', 13, 10], ['diada2', 13, 10], ['triada', 11, 8], ['triada2', 11, 8]];
+  for (const [id, push, sim] of pairs) {
+    const r = READINGS.find((x) => x.id === id);
+    ok(r.alertDepth === push && r.simDepth === sim,
+      id + ' pushes at −' + push + ' and simulates at −' + sim,
+      'push ' + r.alertDepth + ' sim ' + r.simDepth);
+    ok(r.alertDepth > r.simDepth, 'and the push is the rarer of the two');
+  }
+  for (const id of ['enaduo', 'enaduo2']) {
+    const r = READINGS.find((x) => x.id === id);
+    ok(r.alertDepth === 6 && !r.simDepth, id + ' keeps one depth of −6 for both',
+      JSON.stringify({ alert: r.alertDepth, sim: r.simDepth }));
+  }
+  // and the alert scan uses the push depth, never the simulation one
+  const st = createAlertState();
+  scan(st, [row({ allin1: -11 })], realOpts);
+  ok(scan(st, [row({ allin1: -14 })], realOpts).length === 0,
+    'All in 1 stays quiet at −14, its simulation depth notwithstanding');
+  ok(scan(st, [row({ allin1: -15 })], realOpts).length === 1, 'and pushes at −15');
+}
+
 section('a reading can set its own push depth');
 {
   // Andreas Deluxe moves constantly - a miss is 22/37 - so it must not push at the
@@ -189,8 +215,8 @@ section('a reading can set its own push depth');
     JSON.stringify(deep.map((h) => h.label)));
   // a run reading keeps its own, much deeper threshold
   const st2 = createAlertState();
-  scan(st2, [row({ monada: -11 })], realOpts);
-  ok(scan(st2, [row({ monada: -12 })], realOpts).length === 1, 'Monada pushes at −12');
+  scan(st2, [row({ monada: -13 })], realOpts);
+  ok(scan(st2, [row({ monada: -14 })], realOpts).length === 1, 'Monada pushes at −14');
 
   // ALERT_DEPTHS overrides both the reading's own default and the global one
   const st3 = createAlertState();
@@ -393,7 +419,7 @@ const alert = (o = {}) => ({
 {
   const one = formatBatch([alert()], 4, { tz: 'UTC' });
   // Monada carries its own −12, and the header states the depth that actually applies
-  ok(one.startsWith('🎯 <b>−12 or deeper</b>'), 'the header states that reading’s threshold',
+  ok(one.startsWith('🎯 <b>−14 or deeper</b>'), 'the header states that reading’s threshold',
     one.split('\n')[0]);
   ok(!one.includes('tables'), 'a single alert does not say "1 tables"');
   const three = formatBatch([alert(), alert(), alert()], 4, { tz: 'UTC' });
@@ -555,7 +581,8 @@ section('the log of what was pushed');
   });
   const rows = log.add([mk(1, -12), mk(2, -13)]);
   ok(rows.length === 2 && rows.every((r) => r.status === 'queued'), 'alerts start queued');
-  ok(rows[0].depth === 12, 'the threshold that fired is recorded', String(rows[0].depth));
+  // the row carries the depth that actually fired it - Monada's push depth
+  ok(rows[0].depth === 14, 'the threshold that fired is recorded', String(rows[0].depth));
   ok(log.stats().held === 2, 'and are counted as waiting', JSON.stringify(log.stats()));
 
   log.sent(rows, 'the message text');

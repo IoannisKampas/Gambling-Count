@@ -67,6 +67,18 @@ section('it only bets when told to');
   ok(b.snapshot().patterns.length === 1, 'and keeps no figures');
 }
 
+section('it triggers at the simulation depth, not the push depth');
+{
+  const b = new PaperBook({ patterns: ['allin1', 'monada'], readings: READINGS });
+  ok(b.depthFor('allin1') === 11, 'All in 1 simulates at −11 while it pushes at −15',
+    String(b.depthFor('allin1')));
+  ok(b.depthFor('monada') === 12, 'Monada simulates at −12 while it pushes at −14',
+    String(b.depthFor('monada')));
+  ok(b.depthFor('enaduo') === 6, 'Ena/Duo uses −6 for both', String(b.depthFor('enaduo')));
+  const tuned = new PaperBook({ patterns: ['monada'], readings: READINGS, depths: { monada: 3 } });
+  ok(tuned.depthFor('monada') === 3, 'SIM_DEPTHS overrides it', String(tuned.depthFor('monada')));
+}
+
 section('what it bets on');
 {
   // Monada deepens when the interrupter carries on, so the reset - what we bet - is the
