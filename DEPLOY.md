@@ -229,6 +229,46 @@ rather than the global −4, and `ALERT_DEPTHS='andreas=10'` quietens it further
 
 ---
 
+## 6c. Paper betting (/sim)
+
+A simulation of betting the patterns, on paper. It stakes nothing anywhere - the monitor
+never places a bet - it just follows the live spins and keeps a ledger.
+
+Open `/sim`, press **Start**, and it runs for as long as the server does. Its state lives
+in `data/sim.json`, so a restart keeps the ledger; bets open at shutdown lapse rather than
+being guessed at. **Reset** puts it back to the opening budget and clears the history.
+
+| variable | what it does |
+|---|---|
+| `SIM` | `1` starts it on boot, `0` forces it off; otherwise it resumes whatever it was |
+| `SIM_BUDGET` | opening budget, default `10000` |
+| `SIM_UNIT` | stake per number at step 1, default `5` |
+| `SIM_STEPS` | how many doublings, default `6` (5/10/20/40/80/160) |
+| `SIM_PATTERNS` | which patterns to bet; default is the ten run readings |
+
+**The strategy it plays.** A pattern's alert depth is the trigger. From there it bets on
+that count *breaking*: the unit on every number of the group whose arrival resets it, on
+each deciding spin. A loss doubles. A win ends the sequence on that table, and so does a
+sixth loss. **The progression belongs to one table**: several roulettes run at once, each
+with its own step, and a loss on one never raises the stake on another.
+
+Which group resets a count is the reading's own rule, not a choice - for the All in pair
+the count deepens when the original group returns, so the reset is the interrupting group
+carrying on; for the rest it is the other way round. Serie and Andreas Deluxe have no
+decider to bet into and cannot be simulated.
+
+**What the arithmetic says before you start.** A straight-up number pays 35 to 1, so the
+unit on each of 18 numbers returns 36x against 18x staked - exactly double, which is why
+doubling recovers a loss. On a **19-number group it returns less than double**, so a win
+at step 5 or 6 still loses money. A full six-step sequence risks $5,670 (18 numbers) or
+$5,985 (19). The wheel has no memory: the trigger decides *when* you bet, never what the
+bet is worth, and the edge stays 1/37 of everything staked.
+
+`npm run sim` runs the same strategy over a simulated wheel for a Monte Carlo, and
+`npm run sim -- --replay spins.txt` over real spins once you have a file of them.
+
+---
+
 ## 7. When something is wrong
 
 | Symptom | Cause |

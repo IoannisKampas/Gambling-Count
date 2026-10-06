@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paper Betting</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600&family=Barlow:wght@400;500&family=JetBrains+Mono:wght@500;700&display=swap">
+<link rel="stylesheet" href="/shell.css">
+<style>
+:root{
+  --bg:#0d0d0d; --surface:#1a1a19; --surface-sunk:#151514; --surface-raised:#222220;
+  --border:#2c2c2a; --border-hover:#3d3d3a; --divider:#242422; --row-hover:#212120;
+  --ink:#ffffff; --ink-2:#c3c2b7; --ink-dim:#898781; --ink-fainter:#6f6e69;
+  --group-a:#3987e5; --group-b:#d95926; --group-c:#a855f7;
+  --ok:#0ca30c; --warn:#fab219; --bad:#d03b3b;
+  --brand:#3987e5; --brand-surface:#16304f; --brand-ink:#8fbdf2; --btn-border:#33332f;
+  --f-cond:'Barlow Condensed','Arial Narrow',sans-serif;
+  --f-body:'Barlow',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --f-mono:'JetBrains Mono','SFMono-Regular',Consolas,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);min-height:100vh;color:var(--ink);font:400 13px/1.5 var(--f-body);
+  -webkit-font-smoothing:antialiased}
+header{position:sticky;top:0;z-index:20;backdrop-filter:blur(12px);
+  background:color-mix(in srgb,var(--bg) 92%,transparent);border-bottom:1px solid var(--border);
+  padding:12px 20px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.logo{width:24px;height:32px;border-radius:5px;background:var(--brand-surface);
+  border:1px solid var(--brand);display:grid;place-items:center;flex:none;
+  font-family:var(--f-mono);font-weight:700;font-size:12px;color:var(--brand-ink)}
+h1{margin:0;font-family:var(--f-cond);font-weight:600;font-size:19px;letter-spacing:.1em;
+  text-transform:uppercase;white-space:nowrap}
+.tally{font-family:var(--f-mono);font-weight:500;font-size:10px;letter-spacing:.1em;color:var(--ink-fainter)}
+.spacer{flex:1 1 auto}
+button{font:500 11px/1 var(--f-mono);letter-spacing:.1em;text-transform:uppercase;cursor:pointer;
+  border-radius:6px;border:1px solid var(--btn-border);background:var(--surface-raised);
+  color:var(--ink-dim);padding:9px 12px}
+button:hover{border-color:var(--border-hover);color:var(--ink)}
+button.go{border-color:var(--ok);background:#10300f;color:#6fd16f}
+button.stop{border-color:var(--warn);background:#3a2f10;color:var(--warn)}
+button.danger:hover{border-color:var(--bad);color:#f0a3a3}
+section{padding:18px 20px 4px}
+.shead{display:flex;align-items:center;gap:12px;margin:0 0 12px}
+.shead h2{margin:0;font-family:var(--f-cond);font-weight:600;font-size:12px;letter-spacing:.28em;
+  text-transform:uppercase;color:var(--brand-ink)}
+.shead .rule{flex:1 1 auto;height:1px;background:linear-gradient(90deg,var(--border),transparent)}
+.shead .meta{font-family:var(--f-mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink-fainter)}
+.cards{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));margin-bottom:8px}
+.stat{background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:11px 13px}
+.stat .k{font-family:var(--f-mono);font-weight:500;font-size:8.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-fainter)}
+.stat .v{font-family:var(--f-mono);font-weight:700;font-size:22px;line-height:1.2;margin-top:3px}
+.stat .v.good{color:#6fd16f} .stat .v.bad{color:#f0a3a3} .stat .v.warn{color:var(--warn)}
+.stat .sub{font-family:var(--f-mono);font-size:9px;color:var(--ink-fainter);margin-top:2px}
+.curve{height:62px;width:100%;display:block;margin:4px 0 14px}
+table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--border);
+  border-radius:10px;overflow:hidden;margin-bottom:16px}
+th{font-family:var(--f-mono);font-weight:500;font-size:8.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-fainter);text-align:left;padding:9px 10px;
+  border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:7px 10px;border-bottom:1px solid var(--divider);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tbody tr:hover{background:var(--row-hover)}
+.num{font-family:var(--f-mono);font-weight:700;font-size:12px;text-align:right}
+.num.good{color:#6fd16f} .num.bad{color:#f0a3a3}
+.mono{font-family:var(--f-mono);font-size:11px;color:var(--ink-dim)}
+.rd{font-family:var(--f-mono);font-weight:700;font-size:11px;white-space:nowrap}
+.rd.gA{color:color-mix(in srgb,var(--group-a) 80%,#fff)}
+.rd.gB{color:color-mix(in srgb,var(--group-b) 80%,#fff)}
+.sw{position:relative;width:32px;height:18px;flex:none;border-radius:10px;background:#2c2c2a;
+  border:1px solid var(--border);cursor:pointer;display:inline-block;vertical-align:middle}
+.sw:after{content:'';position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;
+  background:var(--ink-fainter);transition:transform .14s}
+.sw.on{background:var(--brand-surface);border-color:var(--brand)}
+.sw.on:after{transform:translateX(14px);background:var(--brand-ink)}
+.chip{font-family:var(--f-mono);font-weight:700;font-size:8px;letter-spacing:.1em;
+  text-transform:uppercase;padding:3px 6px;border-radius:3px;white-space:nowrap}
+.chip.won{background:#10300f;color:#6fd16f}
+.chip.lost{background:#3a1717;color:#f0a3a3}
+.chip.open{background:#3a2f10;color:var(--warn)}
+.sp{display:inline-flex;align-items:center;justify-content:center;min-width:19px;height:19px;
+  padding:0 4px;border-radius:3px;font-family:var(--f-mono);font-weight:700;font-size:9.5px;
+  color:#fff;margin-right:2px}
+.sp.A{background:var(--group-a)} .sp.B{background:var(--group-b)}
+/* the spins before the deciding one, dimmed: context, not the event */
+.sp.old{opacity:.45}
+.note{font-size:12px;color:var(--ink-dim);margin:0 0 14px}
+.note b{color:var(--ink-2)}
+.empty{font-family:var(--f-mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-fainter);text-align:center;padding:26px 0}
+footer{padding:20px;font-family:var(--f-mono);font-size:9px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink-fainter);line-height:1.8}
+</style>
+</head>
+<body class="app">
+
+<div class="rail">
+  <div class="brand">
+    <span class="mark">A♠</span>
+    <span class="txt">Casino Wall<small>read-only monitor</small></span>
+  </div>
+  <nav>
+    <a class="item" href="/"><span class="ico">▦</span>Blackjack</a>
+    <a class="item" href="/roulette"><span class="ico">◉</span>Roulette</a>
+    <a class="item" href="/patterns"><span class="ico">◈</span>Patterns</a>
+    <a class="item" href="/alerts"><span class="ico">✉</span>Alerts</a>
+    <a class="item on" href="/sim"><span class="ico">◍</span>Paper bets<span class="badge" id="railsim"></span></a>
+    <a class="item" href="/settings"><span class="ico">⚙</span>Settings</a>
+  </nav>
+  <div class="foot"><span id="railstat"><span class="dot"></span>loading…</span></div>
+</div>
+
+<div class="page">
+
+<header>
+  <span class="logo">◍</span>
+  <h1>Paper Betting</h1>
+  <span class="tally" id="tally">—</span>
+  <span class="spacer"></span>
+  <button id="toggle">—</button>
+  <button id="reset" class="danger" title="back to the starting budget, clearing every figure and the spin history">Reset</button>
+</header>
+
+<section>
+  <div class="note" id="note"></div>
+
+  <div class="cards" id="cards"></div>
+  <svg class="curve" id="curve" preserveAspectRatio="none"></svg>
+
+  <div class="shead"><h2>Patterns</h2><span class="rule"></span>
+    <span class="meta" id="patmeta"></span></div>
+  <table>
+    <thead><tr>
+      <th>On</th><th>Pattern</th><th>Bets at</th><th class="num">Sequences</th><th class="num">Won</th>
+      <th class="num">Lost all</th><th class="num">Staked</th><th class="num">P/L</th>
+    </tr></thead>
+    <tbody id="patterns"></tbody>
+  </table>
+
+  <div class="shead"><h2>Open bets</h2><span class="rule"></span>
+    <span class="meta" id="openmeta"></span></div>
+  <table>
+    <thead><tr>
+      <th>Table</th><th>Pattern</th><th>On</th><th class="num">Step</th>
+      <th class="num">Per number</th><th class="num">At risk</th>
+    </tr></thead>
+    <tbody id="open"></tbody>
+  </table>
+  <div class="empty" id="noopen" hidden>Nothing staked right now</div>
+
+  <div class="shead"><h2>Spins played</h2><span class="rule"></span>
+    <span class="meta" id="spinmeta"></span></div>
+  <table>
+    <thead><tr>
+      <th>Time</th><th>Table</th><th>Spins (newest first)</th><th>What happened</th><th class="num">Balance</th>
+    </tr></thead>
+    <tbody id="spins"></tbody>
+  </table>
+  <div class="empty" id="nospins" hidden>No spins played yet — it acts when a count reaches its depth</div>
+
+  <div class="shead"><h2>Settled</h2><span class="rule"></span>
+    <span class="meta" id="histmeta"></span></div>
+  <table>
+    <thead><tr>
+      <th>Time</th><th>Table</th><th>Pattern</th><th class="num">Step</th><th>Spin</th>
+      <th class="num">Staked</th><th class="num">P/L</th><th class="num">Balance</th>
+    </tr></thead>
+    <tbody id="history"></tbody>
+  </table>
+  <div class="empty" id="nohist" hidden>No settled bets yet</div>
+</section>
+
+<footer>
+  Paper only — nothing is staked anywhere, and the monitor never places a bet.<br>
+  The simulation follows the live spins while the server runs; it survives a restart, but
+  bets open at shutdown lapse rather than being guessed.
+</footer>
+
+</div><!-- /page -->
+
+<script>
+const $ = (s) => document.querySelector(s);
+let d = null;
+// which numbers are group A, for colouring the strips the way the wall does
+let aSet = new Set();
+
+const money = (n) => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n)).toLocaleString('en-US');
+const pct = (n) => (n == null ? '—' : (n * 100).toFixed(1) + '%');
+const clock = (ms) => new Date(ms).toLocaleTimeString('en-GB', { hour12: false });
+const pl = (n) => '<span class="num ' + (n > 0 ? 'good' : n < 0 ? 'bad' : '') + '">' +
+  (n > 0 ? '+' : '') + money(n) + '</span>';
+const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+const sideCls = (side) => (side === 'A' ? 'gA' : side === 'B' ? 'gB' : '');
+
+function paintCards(){
+  const since = d.startedAt ? Math.round((Date.now() - d.startedAt) / 60000) : 0;
+  const cards = [
+    ['balance', money(d.cash), d.cash >= d.budget ? 'good' : 'bad',
+      'started at ' + money(d.budget)],
+    ['profit / loss', (d.pnl > 0 ? '+' : '') + money(d.pnl), d.pnl > 0 ? 'good' : d.pnl < 0 ? 'bad' : '',
+      d.spinsSeen.toLocaleString('en-US') + ' spins watched'],
+    ['staked now', money(d.atRisk), d.atRisk ? 'warn' : '', d.open.length + ' open bets'],
+    ['sequences', d.totals.sequences, '', d.totals.wins + ' won, ' + d.totals.losses + ' lost all ' + d.steps],
+    ['worst point', money(d.low), d.low < d.budget ? 'bad' : '',
+      'drawdown ' + money(d.drawdown)],
+    ['running for', since < 60 ? since + 'm' : (since / 60).toFixed(1) + 'h', '',
+      money(d.unit) + ' x ' + d.steps + ' steps'],
+  ];
+  const html = cards.map(([k, v, cls, sub]) =>
+    '<div class="stat"><div class="k">' + k + '</div><div class="v ' + (cls || '') + '">' + v +
+    '</div><div class="sub">' + esc(sub) + '</div></div>').join('');
+  const el = $('#cards');
+  if (el.__html !== html) { el.innerHTML = html; el.__html = html; }
+}
+
+// the balance over time, drawn from the points the server keeps
+function paintCurve(){
+  const svg = $('#curve');
+  const pts = d.curve || [];
+  if (pts.length < 2) { svg.innerHTML = ''; return; }
+  const w = svg.clientWidth || 800, h = 62;
+  const xs = pts.map((p, i) => i / (pts.length - 1) * w);
+  const lo = Math.min(d.budget, ...pts.map((p) => p.cash));
+  const hi = Math.max(d.budget, ...pts.map((p) => p.cash));
+  const y = (v) => h - 4 - ((v - lo) / Math.max(1, hi - lo)) * (h - 8);
+  const line = pts.map((p, i) => (i ? 'L' : 'M') + xs[i].toFixed(1) + ' ' + y(p.cash).toFixed(1)).join(' ');
+  const base = y(d.budget).toFixed(1);
+  const up = pts[pts.length - 1].cash >= d.budget;
+  svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
+  svg.innerHTML =
+    '<line x1="0" y1="' + base + '" x2="' + w + '" y2="' + base +
+      '" stroke="#3d3d3a" stroke-dasharray="3 3" stroke-width="1"/>' +
+    '<path d="' + line + '" fill="none" stroke="' + (up ? '#6fd16f' : '#f0a3a3') + '" stroke-width="1.6"/>';
+}
+
+function paintPatterns(){
+  const html = d.bettable.map((b) => {
+    const p = d.patterns.find((x) => x.pattern === b.id) ||
+      { sequences: 0, wins: 0, losses: 0, staked: 0, pnl: 0, winRate: null };
+    return '<tr>' +
+      '<td><span class="sw' + (b.on ? ' on' : '') + '" data-sim="' + b.id + '"></span></td>' +
+      '<td class="rd ' + sideCls(b.side) + '">' + esc(b.label) + '</td>' +
+      '<td class="mono">−' + b.depth + '</td>' +
+      '<td class="num">' + p.sequences + '</td>' +
+      '<td class="num">' + p.wins + (p.winRate != null ? ' <span class="mono">' + pct(p.winRate) + '</span>' : '') + '</td>' +
+      '<td class="num ' + (p.losses ? 'bad' : '') + '">' + p.losses + '</td>' +
+      '<td class="num mono">' + money(p.staked) + '</td>' +
+      '<td>' + pl(p.pnl) + '</td>' +
+    '</tr>';
+  }).join('');
+  const el = $('#patterns');
+  if (el.__html !== html) { el.innerHTML = html; el.__html = html; }
+  const on = d.bettable.filter((b) => b.on).length;
+  $('#patmeta').textContent = on + ' of ' + d.bettable.length + ' simulated';
+}
+
+function paintOpen(){
+  const html = d.open.map((b) =>
+    '<tr><td>' + esc(b.table) + '</td>' +
+    '<td class="rd">' + esc(b.label) + '</td>' +
+    '<td class="mono">' + b.numbers + ' numbers of ' + b.group + '</td>' +
+    '<td class="num">' + b.step + ' of ' + d.steps + '</td>' +
+    '<td class="num mono">' + money(b.per) + '</td>' +
+    '<td class="num">' + money(b.total) + '</td></tr>').join('');
+  const el = $('#open');
+  if (el.__html !== html) { el.innerHTML = html; el.__html = html; }
+  $('#noopen').hidden = d.open.length > 0;
+  $('#openmeta').textContent = money(d.atRisk) + ' staked';
+}
+
+function paintSpins(){
+  const rows = (d.spins || []).map((e) => {
+    const strip = (e.window || []).map((n, i) =>
+      '<span class="sp ' + (aSet.has(n) ? 'A' : 'B') + (i ? ' old' : '') + '">' + n + '</span>').join('');
+    const what = e.actions.map((a) => {
+      if (a.kind === 'placed') {
+        return '<span class="chip open">' + esc(a.label) + ' step ' + a.step + ' · ' +
+          money(a.staked) + ' on ' + a.numbers + ' numbers</span>';
+      }
+      return '<span class="chip ' + (a.kind === 'won' ? 'won' : 'lost') + '">' + esc(a.label) +
+        ' ' + (a.kind === 'won' ? 'won' : 'lost') + ' ' + money(Math.abs(a.pnl)) +
+        (a.kind === 'lost' && a.sequenceOver ? ' · sequence over' : '') + '</span>';
+    }).join(' ');
+    return '<tr><td class="mono">' + clock(e.at) + '</td>' +
+      '<td>' + esc(e.table) + '</td>' +
+      '<td>' + strip + '</td>' +
+      '<td>' + what + '</td>' +
+      '<td class="num mono">' + money(e.cash) + '</td></tr>';
+  }).join('');
+  const el = $('#spins');
+  if (el.__html !== rows) { el.innerHTML = rows; el.__html = rows; }
+  $('#nospins').hidden = (d.spins || []).length > 0;
+  $('#spinmeta').textContent = (d.spins || []).length + ' spins acted on';
+}
+
+function paintHistory(){
+  const html = (d.history || []).map((e) =>
+    '<tr><td class="mono">' + clock(e.at) + '</td>' +
+    '<td>' + esc(e.table) + '</td>' +
+    '<td class="rd">' + esc(e.label) + '</td>' +
+    '<td class="num">' + e.step + '</td>' +
+    '<td><span class="chip ' + (e.won ? 'won' : 'lost') + '">' + e.spin + (e.won ? ' hit' : ' miss') + '</span></td>' +
+    '<td class="num mono">' + money(e.staked) + '</td>' +
+    '<td>' + pl(e.pnl) + '</td>' +
+    '<td class="num mono">' + money(e.cash) + '</td></tr>').join('');
+  const el = $('#history');
+  if (el.__html !== html) { el.innerHTML = html; el.__html = html; }
+  $('#nohist').hidden = (d.history || []).length > 0;
+  $('#histmeta').textContent = (d.history || []).length + ' most recent';
+}
+
+function render(){
+  if (!d) return;
+  $('#toggle').textContent = d.running ? '■ Stop' : '▶ Start';
+  $('#toggle').className = d.running ? 'stop' : 'go';
+  $('#tally').textContent = (d.running ? 'running' : 'stopped') + ' · ' + money(d.cash) +
+    ' · ' + (d.pnl >= 0 ? '+' : '') + money(d.pnl);
+  $('#note').innerHTML = d.running
+    ? 'Following the live spins. Each pattern bets on its own count <b>breaking</b> once it reaches its alert depth: ' +
+      money(d.unit) + ' on every number of the group that would reset it, doubling on a loss through ' +
+      d.stakes.map(money).join('/') + '. A full sequence risks <b>' + money(d.risk18) + '</b> on an 18-number group, <b>' +
+      money(d.risk19) + '</b> on a 19-number one.'
+    : 'Stopped. Press Start and it follows every live spin from here, staking nothing real.';
+  paintCards();
+  paintCurve();
+  paintPatterns();
+  paintOpen();
+  paintSpins();
+  paintHistory();
+  $('#railsim').textContent = d.open.length ? String(d.open.length) : '';
+  $('#railstat').innerHTML = '<span class="dot' + (d.running ? ' live' : '') + '"></span>' +
+    (d.running ? money(d.pnl) : 'stopped');
+}
+
+async function post(body){
+  try {
+    const r = await fetch('/api/sim', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const j = await r.json();
+    if (j && j.running !== undefined) { d = { ...d, ...j }; render(); }
+  } catch {}
+  poll();
+}
+
+$('#toggle').addEventListener('click', () => post({ on: !(d && d.running) }));
+$('#reset').addEventListener('click', () => {
+  if (confirm('Clear the ledger and start again from the opening budget?')) post({ reset: true });
+});
+$('#patterns').addEventListener('click', (e) => {
+  const sw = e.target.closest('.sw[data-sim]');
+  if (!sw) return;
+  const id = sw.dataset.sim;
+  const b = d.bettable.find((x) => x.id === id);
+  sw.classList.toggle('on', !(b && b.on));
+  post({ id, on: !(b && b.on) });
+});
+
+async function poll(){
+  try {
+    const j = await (await fetch('/api/sim?history=60&spins=80')).json();
+    d = j;
+    render();
+  } catch (e) {
+    if (!window.__said) { window.__said = true; console.error('sim page: ' + e.message, e); }
+  }
+}
+(async () => {
+  try {
+    const g = await (await fetch('/api/patterns')).json();
+    if (g.groups) aSet = new Set(g.groups.A || []);
+  } catch {}
+  poll();
+  setInterval(poll, 2000);
+})();
+window.addEventListener('resize', () => { if (d) paintCurve(); });
+</script>
+</body>
+</html>

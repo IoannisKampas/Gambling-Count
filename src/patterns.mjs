@@ -309,7 +309,14 @@ const freshReadings = () => {
 
 // Tracks every reading for many tables across repeated polls.
 export class PatternTracker {
-  constructor() { this.tables = new Map(); }
+  // onSpin({ tableId, meta, n, states, events, observed }) is called once per spin fed
+  // through, in order. The paper-betting book uses it to settle and place bets against
+  // the same spins the wall shows; `observed` is false for a replay or a re-seed, which
+  // must never move money (PATTERNS.md §8.3).
+  constructor({ onSpin = null } = {}) {
+    this.tables = new Map();
+    this.onSpin = onSpin;
+  }
 
   get(id) { return this.tables.get(id) || null; }
   all() { return [...this.tables.values()]; }
@@ -405,6 +412,7 @@ export class PatternTracker {
   // must not inflate the statistics (§8.3).
   #feed(t, spinsOldestFirst, observed) {
     for (const s of spinsOldestFirst) {
+      const states = {}, events = {};
       for (const id of READING_IDS) {
         const slot = t.reads[id];
         const r = applySpin(slot.state, s.n, id);
@@ -415,6 +423,15 @@ export class PatternTracker {
           // keep stats clean on a replay
           slot.state.resets = 0;
           slot.state.spinsObserved = 0;
+        }
+        states[id] = slot.state;
+        events[id] = r.event;
+      }
+      if (this.onSpin) {
+        try {
+          this.onSpin({ tableId: t.id, meta: t.meta, n: s.n, states, events, observed });
+        } catch {
+          // a listener must never break the tracking it is watching
         }
       }
     }

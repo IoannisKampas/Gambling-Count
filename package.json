@@ -18,7 +18,9 @@
     "test:patterns": "node tools/patterns-test.mjs",
     "tg:chat": "node tools/telegram-chat.mjs",
     "tg:test": "node tools/telegram-test.mjs",
-    "test:alerts": "node tools/alerts-test.mjs"
+    "test:alerts": "node tools/alerts-test.mjs",
+    "sim": "node tools/bet-sim.mjs",
+    "test:paper": "node tools/paper-test.mjs"
   },
   "dependencies": {
     "ws": "^8.21.3"

@@ -28,3 +28,6 @@ credentials.json
 
 # which tables may raise a push; per-host state, like data/operators.json
 data/alerts.json
+
+# the paper-betting ledger: per-host state, like data/alerts.json
+data/sim.json

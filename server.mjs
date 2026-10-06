@@ -18,6 +18,7 @@ import { Telegram } from './src/telegram.mjs';
 import * as alerts from './src/alerts.mjs';
 import { AlertSelection } from './src/selection.mjs';
 import { AlertLog } from './src/alert-log.mjs';
+import { PaperBook, BETTABLE, DEFAULT_PATTERNS } from './src/paper.mjs';
 import { SessionProvider } from './src/session.mjs';
 import { proxySummary } from './src/chrome.mjs';
 import * as operators from './src/operators.mjs';
@@ -58,6 +59,14 @@ const ALERT_DEPTHS = Object.fromEntries((process.env.ALERT_DEPTHS || '').split('
   .filter(([id, n]) => id && Number(n) > 0)
   .map(([id, n]) => [id, Number(n)]));
 const ALERT_TABLES = (process.env.ALERT_TABLES || '').split(',').map((s) => s.trim()).filter(Boolean);
+
+// Paper betting (/sim). Off unless SIM=1 or it was left on in data/sim.json; it stakes
+// nothing real, it just follows the live spins with the strategy from src/paper.mjs.
+const SIM_FILE = path.join(ROOT, 'data/sim.json');
+const SIM_BUDGET = Number(process.env.SIM_BUDGET || 10000);
+const SIM_UNIT = Number(process.env.SIM_UNIT || 5);
+const SIM_STEPS = Number(process.env.SIM_STEPS || 6);
+const SIM_PATTERNS = (process.env.SIM_PATTERNS || '').split(',').map((s) => s.trim()).filter(Boolean);
 const ALERT_ALL = process.env.ALERT_ALL === '1';
 
 // ---------------------------------------------------------------- catalogue ----
@@ -341,6 +350,10 @@ if (process.env.PLAYTECH !== '0') {
   // stable id, so the counts cannot be continued honestly across the gap.
   playtech.on('gap', () => {
     const n = patterns.markGap((t) => t.meta && t.meta.provider === 'playtech');
+    // those counts are gone, so anything the book staked against them is void
+    for (const t of patterns.all()) {
+      if (t.meta && t.meta.provider === 'playtech' && paper.voidTable(t.id)) simDirty = true;
+    }
     log.warn('playtech reconnected — pattern counts reset for ' + n + ' tables (missed spins)');
   });
   playtech.start();
@@ -524,6 +537,12 @@ const server = http.createServer(async (req, res) => {
     return res.end(html);
   }
 
+  if (url.pathname === '/sim') {
+    const html = fs.readFileSync(path.join(ROOT, 'public/sim.html'));
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    return res.end(html);
+  }
+
   if (url.pathname === '/alerts') {
     const html = fs.readFileSync(path.join(ROOT, 'public/alerts.html'));
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -694,7 +713,54 @@ function rouletteTables(want) {
 // in the same order (§8.5) - a second history fetch would eventually disagree with
 // itself. Only All in 1 is the alerting reading, per §8.5; the rest are counted and
 // shown but never notify.
-const patterns = new PatternTracker();
+// The paper book follows the same spins the wall does, through the tracker's own hook,
+// so a simulated bet can never be settled against a spin the wall did not show.
+const paper = new PaperBook({
+  budget: SIM_BUDGET,
+  unit: SIM_UNIT,
+  steps: SIM_STEPS,
+  patterns: SIM_PATTERNS.length ? SIM_PATTERNS : DEFAULT_PATTERNS,
+  depths: ALERT_DEPTHS,
+  readings: READINGS,
+});
+try {
+  if (fs.existsSync(SIM_FILE)) paper.load(JSON.parse(fs.readFileSync(SIM_FILE, 'utf8')));
+} catch (e) {
+  log.warn('sim ledger unreadable, starting fresh: ' + e.message);
+}
+if (process.env.SIM === '1') paper.start();
+if (process.env.SIM === '0') paper.stop();
+
+let simDirty = false;
+function saveSim() {
+  if (!simDirty) return;
+  simDirty = false;
+  try {
+    fs.mkdirSync(path.dirname(SIM_FILE), { recursive: true });
+    const tmp = SIM_FILE + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(paper.toJSON(), null, 1));
+    fs.renameSync(tmp, SIM_FILE);
+  } catch (e) {
+    log.warn('could not save the sim ledger: ' + e.message);
+  }
+}
+
+const patterns = new PatternTracker({
+  // Only observed spins move the book: a replay or a re-seed is history somebody else
+  // watched, exactly as with the push notifications (PATTERNS.md §8.3).
+  onSpin: ({ tableId, meta, n, states, observed }) => {
+    if (!observed || !paper.running) return;
+    const settled = paper.feed(tableId, (meta && meta.name) || tableId, n, states);
+    if (settled.length) simDirty = true;
+    for (const e of settled) {
+      if (e.placed) continue;
+      log.info('sim ' + e.label + ' ' + (e.won ? 'WON' : 'lost') + ' step ' + e.step +
+        ' on ' + e.table + ': ' + (e.won ? '+' : '') + Math.round(e.pnl) +
+        ' (spin ' + e.spin + ', ' + e.numbers + ' numbers of ' + e.group + ') -> ' +
+        Math.round(e.cash));
+    }
+  },
+});
 
 // Push notifications for deep counts. The latch that stops replayed history being
 // announced lives in src/alerts.mjs; the queueing and rate limiting in src/telegram.mjs.
@@ -855,6 +921,42 @@ async function routeRest(req, res, url) {
       tz: process.env.ALERT_TZ || 'Europe/Athens',
       at: Date.now(),
     });
+  }
+
+  // The paper-betting simulation: its ledger, and the switches that drive it.
+  if (url.pathname === '/api/sim' && req.method !== 'POST') {
+    return json(res, 200, {
+      ...paper.snapshot({
+        history: Math.min(120, Number(url.searchParams.get('history')) || 40),
+        spins: Math.min(150, Number(url.searchParams.get('spins')) || 60),
+      }),
+      bettable: BETTABLE.map((id) => {
+        const r = READINGS.find((x) => x.id === id);
+        return { id, label: r.label, side: r.side, depth: paper.depthFor(id), on: paper.isOn(id) };
+      }),
+      at: Date.now(),
+    });
+  }
+
+  // `{ on }` starts or stops it, `{ reset: true }` clears the ledger, `{ patterns: [...] }`
+  // or `{ id, on }` choose which patterns it bets.
+  if (url.pathname === '/api/sim' && req.method === 'POST') {
+    let body = {};
+    try { body = await readJson(req); } catch {}
+    if (body.reset) { paper.reset({ keepRunning: true }); log.info('sim ledger reset'); }
+    if (Array.isArray(body.patterns)) paper.setPatterns(body.patterns);
+    if (body.id) paper.togglePattern(String(body.id), body.on);
+    if (body.on === true || body.on === false) {
+      if (body.id) { /* already handled as a pattern toggle */ }
+      else {
+        if (body.on) paper.start(); else paper.stop();
+        log.info('sim ' + (paper.running ? 'started' : 'stopped') +
+          ' at ' + Math.round(paper.cash) + ' of ' + paper.budget);
+      }
+    }
+    simDirty = true;
+    saveSim();
+    return json(res, 200, { ok: true, ...paper.snapshot({ history: 1 }) });
   }
 
   // Which patterns may alert at all - the switches on /settings. `{ readings: [...] }`
@@ -1133,6 +1235,9 @@ server.listen(PORT, HOST, async () => {
   console.log('  logging to ' + log.path + (RECORD_DIR ? '; recording to ' + RECORD_DIR : '') + '\n');
   log.info('server started on :' + PORT);
   if (proxySummary()) log.info('browser traffic via proxy ' + proxySummary());
+  log.info('paper sim ' + (paper.running ? 'RUNNING' : 'stopped') + ': ' +
+    Math.round(paper.cash) + ' of ' + paper.budget + ', ' + paper.patterns.length +
+    ' patterns, ' + paper.unit + ' per number x ' + paper.steps + ' steps (toggle at /sim)');
   if (!telegram.configured) {
     log.info('telegram alerts off (set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)');
   } else {
@@ -1193,5 +1298,7 @@ server.listen(PORT, HOST, async () => {
   // Playtech's lobby only flushes every ~29s, so every second we add is a second of
   // avoidable staleness on top of a delay we cannot control.
   setInterval(() => { try { patternTick(); } catch (e) { log.warn('pattern tick: ' + e.message); } }, 1000);
+  // the ledger is only worth a write when something actually moved
+  setInterval(saveSim, 15000).unref?.();
   scheduleBroadcast();
 });
