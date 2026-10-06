@@ -11,14 +11,14 @@
 //
 //   * A pattern's alert depth is the trigger (All in 1 at -11, Monada at -12, ...).
 //   * Then bet on the count BREAKING: `unit` on every number of the group that resets it.
-//   * Double on a loss - 5/10/20/40/80/160 per number - and stop at a win, or after six.
+//   * Double on a loss - 5/10/20/40 per number - and stop at a win, or after the fourth.
 //
 // WHAT TO EXPECT, before reading the output
 //
 // A straight-up number pays 35 to 1, so `b` on each of 18 numbers returns 36b against
 // 18b staked: exactly double, which is what lets doubling recover a loss. On 19 numbers
-// it returns 36b against 19b, so the progression no longer recovers - a win at step 5 or
-// 6 still loses. Either way the wheel is memoryless, so no trigger changes what a spin
+// it returns 36b against 19b, so the progression no longer recovers - the deeper the step
+// the worse a win is. Either way the wheel is memoryless, so no trigger changes what a spin
 // pays; the house edge is 1/37 of everything staked. This run shows the SHAPE of that:
 // how often a sequence completes, how deep it digs, and how often the budget is gone.
 
@@ -35,7 +35,7 @@ const flag = (name, fallback) => {
 const CFG = {
   budget: Number(flag('budget', 10000)),
   unit: Number(flag('unit', 5)),
-  steps: Number(flag('steps', 6)),
+  steps: Number(flag('steps', 4)),
   tables: Number(flag('tables', 33)),
   spins: Number(flag('spins', 10080)),     // a week at one spin a minute
   runs: Number(flag('runs', 60)),

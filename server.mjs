@@ -65,7 +65,10 @@ const ALERT_TABLES = (process.env.ALERT_TABLES || '').split(',').map((s) => s.tr
 const SIM_FILE = path.join(ROOT, 'data/sim.json');
 const SIM_BUDGET = Number(process.env.SIM_BUDGET || 10000);
 const SIM_UNIT = Number(process.env.SIM_UNIT || 5);
-const SIM_STEPS = Number(process.env.SIM_STEPS || 6);
+const SIM_STEPS = Number(process.env.SIM_STEPS || 4);
+// The simulation plays the tables armed for alerts on /patterns, so there is one set of
+// picks rather than two. SIM_ALL_TABLES=1 ignores them and plays every table.
+const SIM_ALL_TABLES = process.env.SIM_ALL_TABLES === '1';
 const SIM_PATTERNS = (process.env.SIM_PATTERNS || '').split(',').map((s) => s.trim()).filter(Boolean);
 const ALERT_ALL = process.env.ALERT_ALL === '1';
 
@@ -722,6 +725,9 @@ const paper = new PaperBook({
   patterns: SIM_PATTERNS.length ? SIM_PATTERNS : DEFAULT_PATTERNS,
   depths: ALERT_DEPTHS,
   readings: READINGS,
+  // only a pair that would raise an alert is played: the table armed with its bell on
+  // /patterns, and the pattern switched on in Settings
+  allow: (tableId, patternId) => SIM_ALL_TABLES || alertTables.has(tableId, patternId),
 });
 try {
   if (fs.existsSync(SIM_FILE)) paper.load(JSON.parse(fs.readFileSync(SIM_FILE, 'utf8')));
@@ -932,8 +938,18 @@ async function routeRest(req, res, url) {
       }),
       bettable: BETTABLE.map((id) => {
         const r = READINGS.find((x) => x.id === id);
-        return { id, label: r.label, side: r.side, depth: paper.depthFor(id), on: paper.isOn(id) };
+        return {
+          id, label: r.label, side: r.side, depth: paper.depthFor(id), on: paper.isOn(id),
+          // how many tables are armed for this pattern: the sim only plays those
+          tables: SIM_ALL_TABLES ? null : patternRows(null)
+            .filter((t) => alertTables.has(t.id, id)).length,
+        };
       }),
+      picks: {
+        allTables: SIM_ALL_TABLES,
+        tables: alertTables.list().length,
+        pairs: alertTables.pairs(READINGS.length),
+      },
       at: Date.now(),
     });
   }

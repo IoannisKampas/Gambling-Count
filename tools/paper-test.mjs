@@ -194,6 +194,59 @@ section('many tables at once, but the doubling is per table');
     String(10000 - b.cash));
 }
 
+section('it only plays the tables that were picked');
+{
+  // The live book is given an allow(table, pattern) gate: the pairs armed for alerts.
+  // A pair outside it is never staked, however deep its count gets.
+  const picked = new Set(['x|monada']);
+  const b = new PaperBook({
+    budget: 10000, unit: 5, steps: 4, start: true,
+    patterns: ['monada'], readings: READINGS, depths: { monada: 2 },
+    allow: (tableId, pattern) => picked.has(tableId + '|' + pattern),
+  });
+  const x = table(b, ['monada'], { tableId: 'x', name: 'Picked' });
+  const y = table(b, ['monada'], { tableId: 'y', name: 'Not picked' });
+  x.run([A, B, B, A, B, B]); x.run([A, B]);
+  y.run([A, B, B, A, B, B]); y.run([A, B]);
+  const open = b.openBets();
+  ok(open.length === 1 && open[0].tableId === 'x', 'only the picked table is staked',
+    JSON.stringify(open.map((o) => o.tableId)));
+  ok(b.snapshot().totals.bets === 1, 'and the other table costs nothing',
+    String(b.snapshot().totals.bets));
+
+  // settlement is never gated: a bet already on the table resolves even if the pick goes
+  picked.clear();
+  x.run([A]);                                   // the decider arrives: our bet lands
+  ok(b.snapshot().totals.wins === 1, 'an open bet still settles after the pick is removed',
+    JSON.stringify(b.snapshot().totals));
+  ok(b.openBets().length === 0, 'leaving nothing open');
+  // and nothing new is staked now
+  x.run([A, B, B, A, B]);
+  ok(b.snapshot().totals.bets === 1, 'with no new bets once it is unpicked',
+    String(b.snapshot().totals.bets));
+}
+{
+  // four steps is the default ladder now
+  const d = new PaperBook({ patterns: ['monada'], readings: READINGS });
+  ok(d.steps === 4, 'the default is four steps', String(d.steps));
+  ok(d.snapshot().stakes.join() === '5,10,20,40', 'staking 5/10/20/40 a number',
+    d.snapshot().stakes.join());
+  ok(d.sequenceRisk(18) === 75 * 18 && d.sequenceRisk(19) === 75 * 19,
+    'so a full sequence risks $1,350 / $1,425',
+    d.sequenceRisk(18) + '/' + d.sequenceRisk(19));
+}
+{
+  // a sequence lost over four steps costs the four stakes, and no more
+  const b = new PaperBook({ budget: 10000, unit: 5, steps: 4, start: true,
+    patterns: ['monada'], readings: READINGS, depths: { monada: 2 } });
+  const t = table(b, ['monada']);
+  t.run([A, B, B, A, B, B]);
+  for (let i = 0; i < 4; i++) t.deeper();
+  ok(b.snapshot().totals.losses === 1 && b.snapshot().totals.bets === 4,
+    'four bets, then the sequence is over', JSON.stringify(b.snapshot().totals));
+  ok(10000 - b.cash === 75 * 18, 'having staked $1,350', String(10000 - b.cash));
+}
+
 section('when it stops');
 {
   const b = book({ patterns: ['monada'] });

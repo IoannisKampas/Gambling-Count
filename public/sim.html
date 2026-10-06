@@ -244,7 +244,8 @@ function paintPatterns(){
     return '<tr>' +
       '<td><span class="sw' + (b.on ? ' on' : '') + '" data-sim="' + b.id + '"></span></td>' +
       '<td class="rd ' + sideCls(b.side) + '">' + esc(b.label) + '</td>' +
-      '<td class="mono">−' + b.depth + '</td>' +
+      '<td class="mono">−' + b.depth +
+        (b.tables != null ? ' <span style="opacity:.6">· ' + b.tables + ' tables</span>' : '') + '</td>' +
       '<td class="num">' + p.sequences + '</td>' +
       '<td class="num">' + p.wins + (p.winRate != null ? ' <span class="mono">' + pct(p.winRate) + '</span>' : '') + '</td>' +
       '<td class="num ' + (p.losses ? 'bad' : '') + '">' + p.losses + '</td>' +
@@ -319,12 +320,19 @@ function render(){
   $('#toggle').className = d.running ? 'stop' : 'go';
   $('#tally').textContent = (d.running ? 'running' : 'stopped') + ' · ' + money(d.cash) +
     ' · ' + (d.pnl >= 0 ? '+' : '') + money(d.pnl);
+  const picks = d.picks || {};
+  const scope = picks.allTables
+    ? 'every table (SIM_ALL_TABLES=1)'
+    : picks.tables
+      ? '<b>' + picks.tables + ' table' + (picks.tables === 1 ? '' : 's') + '</b> armed on the ' +
+        '<a href="/patterns">Patterns</a> page'
+      : '<b>no tables</b> — arm them with the bell on the <a href="/patterns">Patterns</a> page';
   $('#note').innerHTML = d.running
-    ? 'Following the live spins. Each pattern bets on its own count <b>breaking</b> once it reaches its alert depth: ' +
-      money(d.unit) + ' on every number of the group that would reset it, doubling on a loss through ' +
-      d.stakes.map(money).join('/') + '. A full sequence risks <b>' + money(d.risk18) + '</b> on an 18-number group, <b>' +
-      money(d.risk19) + '</b> on a 19-number one.'
-    : 'Stopped. Press Start and it follows every live spin from here, staking nothing real.';
+    ? 'Playing ' + scope + '. Each pattern bets on its own count <b>breaking</b> once it reaches its depth: ' +
+      money(d.unit) + ' on every number of the group that would reset it, doubling through ' +
+      d.stakes.map(money).join('/') + '. A full sequence risks <b>' + money(d.risk18) +
+      '</b> (18 numbers) or <b>' + money(d.risk19) + '</b> (19).'
+    : 'Stopped. Press Start and it follows the live spins on ' + scope + ', staking nothing real.';
   paintCards();
   paintCurve();
   paintPatterns();

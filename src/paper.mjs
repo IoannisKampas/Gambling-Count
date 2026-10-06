@@ -10,8 +10,10 @@
 //   * A pattern's alert depth is the trigger (All in 1 at −11, Monada at −12, …).
 //   * From then on, bet on the pattern BREAKING: `unit` on every number of the group
 //     whose arrival resets the count, on each deciding spin.
-//   * A loss doubles: 5, 10, 20, 40, 80, 160 per number - six steps.
-//   * A win ends the sequence on that table. Six losses end it too.
+//   * A loss doubles: 5, 10, 20, 40 per number - four steps (SIM_STEPS to change it).
+//   * A win ends the sequence on that table. A fourth loss ends it too.
+//   * Only the (table, pattern) pairs armed for alerts are played, so the simulation
+//     follows the same picks as the notifications rather than a second list.
 //
 // Which group resets a count is the reading's own rule, not a choice. For the All in pair
 // the count deepens when the original group returns, so the reset is the interrupting
@@ -43,7 +45,7 @@ export const DEFAULT_PATTERNS = [
 export const DEFAULTS = {
   budget: 10000,
   unit: 5,
-  steps: 6,
+  steps: 4,              // 5 / 10 / 20 / 40 per number
   afterWin: 'stop',      // stop | continue  (per table, per pattern)
   afterLoss: 'stop',
   patterns: DEFAULT_PATTERNS,
@@ -69,6 +71,9 @@ export class PaperBook {
     this.afterWin = cfg.afterWin;
     this.afterLoss = cfg.afterLoss;
     this.depths = cfg.depths || {};
+    // allow(tableId, patternId) -> may this pair be STAKED? Settlement is never gated: a
+    // bet already on the table has to be resolved whatever the picks say now.
+    this.allow = typeof cfg.allow === 'function' ? cfg.allow : null;
     this.rules = new Map((cfg.readings || READINGS).map((r) => [r.id, r]));
     this.patterns = (cfg.patterns || BETTABLE).filter((id) => {
       const r = this.rules.get(id);
@@ -213,6 +218,7 @@ export class PaperBook {
     // 2. stake on the next decider, where the count is deep enough
     for (const id of this.patterns) {
       if (t.cycle[id] === 'done') continue;
+      if (this.allow && !this.allow(tableId, id)) continue;   // not a picked pair
       const s = states && states[id];
       if (!s || s.phase !== PHASE.INTERRUPTED) continue;      // no decider pending
       if (s.count > -this.depthFor(id)) continue;             // not deep enough
