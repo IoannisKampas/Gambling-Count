@@ -70,6 +70,18 @@ h1{margin:0;font-family:var(--f-cond);font-weight:600;font-size:19px;letter-spac
 
 /* sidebar groups */
 .grp{margin-bottom:22px}
+.note{font-size:11px;line-height:1.45;color:var(--ink-dim);margin:0 0 9px}
+.arow{display:flex;gap:6px;margin-top:9px}
+.arow button{flex:1 1 auto}
+.prule{display:flex;align-items:center;gap:8px;padding:4px 0}
+.prule .nm{font-family:var(--f-mono);font-weight:700;font-size:10px;letter-spacing:.04em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.prule .nm.gA{color:color-mix(in srgb,#3987e5 80%,#fff)}
+.prule .nm.gB{color:color-mix(in srgb,#d95926 80%,#fff)}
+.prule .nm.gC{color:color-mix(in srgb,#a855f7 80%,#fff)}
+.prule .at{font-family:var(--f-mono);font-size:9px;color:var(--ink-fainter);margin-left:auto;
+  white-space:nowrap}
+.prule .sw{transform:scale(.82);transform-origin:right center}
 .grp > h3{margin:0 0 8px;font-family:var(--f-mono);font-weight:500;font-size:8px;
   letter-spacing:.18em;text-transform:uppercase;color:var(--ink-fainter);
   display:flex;align-items:center;gap:8px}
@@ -212,6 +224,17 @@ button.brand{border-color:var(--brand);background:var(--brand-surface);color:var
       </div>
     </div>
 
+    <div class="grp">
+      <h3>Pattern alerts</h3>
+      <div class="note" id="alertnote">Switched-on patterns can push to Telegram.
+        Pick which roulettes push each one on the Patterns page.</div>
+      <div id="f-alerts"></div>
+      <div class="arow">
+        <button id="a-all">All on</button>
+        <button id="a-none">All off</button>
+      </div>
+    </div>
+
     <div class="grp"><h3>Provider</h3><div id="f-prov"></div></div>
     <div class="grp"><h3>Visibility</h3><div id="f-state"></div></div>
     <div class="grp"><h3>Casino</h3><div id="f-op"></div></div>
@@ -288,6 +311,71 @@ $('#r-minspins').addEventListener('change', () => {
   rules.minSpins = Math.max(0, Math.min(20, parseInt($('#r-minspins').value, 10) || 0));
   saveRules(); paintRules(); render();
 });
+
+/* ---------- pattern alerts (server-side: the server is what pushes) ---------- */
+let readings = [], enabled = new Set(), depths = {}, armedMap = {};
+
+async function loadAlerts(){
+  try {
+    const j = await (await fetch('/api/patterns')).json();
+    readings = j.readings || [];
+    const p = j.push || {};
+    enabled = new Set(p.enabled || readings.map((r) => r.id));
+    depths = p.depths || {};
+    armedMap = p.armed || {};
+    paintAlerts();
+  } catch {}
+}
+
+function paintAlerts(){
+  // how many tables push each pattern, so the switch shows whether it is actually wired
+  const armedCount = (id) => Object.values(armedMap)
+    .filter((v) => v === '*' || (Array.isArray(v) && v.includes(id))).length;
+  const side = (r) => (r.side === 'A' ? 'gA' : r.side === 'B' ? 'gB' : r.side === 'C' ? 'gC' : '');
+  const html = readings.map((r) => {
+    const on = enabled.has(r.id);
+    const n = armedCount(r.id);
+    return '<div class="prule" title="' + r.needs + '">' +
+      '<span class="nm ' + side(r) + '">' + r.label + '</span>' +
+      '<span class="at">−' + (depths[r.id] || '?') + (on ? ' · ' + n + ' tables' : '') + '</span>' +
+      '<span class="sw' + (on ? ' on' : '') + '" data-reading="' + r.id + '"></span>' +
+    '</div>';
+  }).join('');
+  const el = $('#f-alerts');
+  if (el.__html !== html) { el.innerHTML = html; el.__html = html; }
+  const off = readings.length - enabled.size;
+  $('#alertnote').innerHTML = (off
+    ? '<b>' + enabled.size + ' of ' + readings.length + ' patterns</b> can push to Telegram.'
+    : '<b>Every pattern</b> can push to Telegram.') +
+    ' Pick which roulettes push each one on the <a href="/patterns" style="color:var(--brand-ink)">Patterns</a> page.';
+}
+
+async function postAlerts(body){
+  try {
+    const j = await (await fetch('/api/alerts/readings', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    })).json();
+    if (j.enabled) enabled = new Set(j.enabled);
+    flash();
+  } catch {}
+  paintAlerts();
+}
+
+$('#f-alerts').addEventListener('click', (e) => {
+  const sw = e.target.closest('.sw[data-reading]');
+  if (!sw) return;
+  const id = sw.dataset.reading;
+  const on = !enabled.has(id);
+  if (on) enabled.add(id); else enabled.delete(id);
+  sw.classList.toggle('on', on);
+  postAlerts({ id, on });
+});
+$('#a-all').addEventListener('click', () => postAlerts({ all: true }));
+$('#a-none').addEventListener('click', () => postAlerts({ readings: [] }));
+
+loadAlerts();
+setInterval(loadAlerts, 5000);
 
 /* ---------- filtering ---------- */
 // `except` lets a facet count itself as if its own dimension were unset, so the numbers

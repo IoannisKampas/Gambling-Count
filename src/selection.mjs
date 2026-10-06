@@ -5,11 +5,15 @@
 // the pushes. A selection kept there would mean alerts that depend on which laptop last
 // loaded a page, and none at all while no page is open.
 //
-// The shape is table -> readings, because "Andreas Deluxe on this one wheel only" is a
-// normal thing to want: that reading fires orders of magnitude more often than the run
-// readings, so arming it everywhere drowns them. A table may instead be armed for ALL
-// readings, which is stored as '*' rather than a frozen list - otherwise adding a reading
-// later would silently leave existing tables un-armed for it.
+// Two things are stored:
+//
+//   enabled   which patterns may alert at all - the list chosen on /settings. null means
+//             every pattern, so a reading added later is on by default rather than
+//             silently off.
+//   byTable   for each table, which of those patterns it pushes. "Andreas Deluxe on this
+//             one wheel only" is a normal thing to want: it fires orders of magnitude
+//             more often than the run readings, so arming it everywhere drowns them. '*'
+//             means every pattern on that table, again so a new reading is included.
 //
 // Stored as JSON next to the other per-host state, written atomically, loaded at startup.
 // Unknown table ids are kept rather than pruned: a table missing from today's catalogue
@@ -25,16 +29,42 @@ export class AlertSelection {
     this.file = file;
     this.log = log;
     this.byTable = new Map();     // tableId -> '*' | Set<readingId>
+    this.enabled = null;          // null = every pattern, else Set<readingId>
     this.#load();
   }
 
   get size() { return this.byTable.size; }
 
+  // ---- which patterns may alert at all (chosen on /settings) ----
+  isEnabled(readingId) { return !this.enabled || this.enabled.has(readingId); }
+  enabledList(allReadings = []) { return this.enabled ? [...this.enabled] : [...allReadings]; }
+  allEnabled() { return this.enabled === null; }
+
+  setEnabled(ids, allReadings = []) {
+    if (ids == null) this.enabled = null;
+    else {
+      const set = new Set((ids || []).filter((x) => typeof x === 'string' && x));
+      // all of them is the same as "every pattern", and stays that way for new readings
+      this.enabled = (allReadings.length && set.size === allReadings.length) ? null : set;
+    }
+    this.#save();
+    return this.enabledList(allReadings);
+  }
+
+  toggleEnabled(readingId, on, allReadings = []) {
+    const set = new Set(this.enabled ? [...this.enabled] : allReadings);
+    const want = on === undefined ? !this.isEnabled(readingId) : !!on;
+    if (want) set.add(readingId); else set.delete(readingId);
+    return this.setEnabled([...set], allReadings);
+  }
+
   // every table with anything armed
   list() { return [...this.byTable.keys()]; }
 
-  // may this reading on this table push?
+  // May this reading on this table push? Both halves have to agree: the pattern is
+  // switched on in settings, and this table is armed for it.
   has(tableId, readingId) {
+    if (readingId && !this.isEnabled(readingId)) return false;
     const v = this.byTable.get(tableId);
     if (!v) return false;
     if (v === ALL) return true;
@@ -122,6 +152,9 @@ export class AlertSelection {
       // the first version of this file stored a plain array of table ids; those tables
       // were armed for everything, so they load as '*'
       this.set(Array.isArray(raw) ? raw : raw.tables || {});
+      if (!Array.isArray(raw) && Array.isArray(raw.readings)) {
+        this.enabled = new Set(raw.readings.filter((x) => typeof x === 'string' && x));
+      }
     } catch (e) {
       // a corrupt file must not stop the server: an empty selection is safe (it only
       // means no pushes until something is armed again), and it says so.
@@ -134,7 +167,10 @@ export class AlertSelection {
     try {
       fs.mkdirSync(path.dirname(this.file), { recursive: true });
       const tmp = this.file + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify({ tables: this.map() }, null, 1));
+      fs.writeFileSync(tmp, JSON.stringify({
+        tables: this.map(),
+        ...(this.enabled ? { readings: [...this.enabled] } : {}),
+      }, null, 1));
       fs.renameSync(tmp, this.file);   // atomic, so a crash mid-write cannot truncate it
     } catch (e) {
       this.log.warn('could not save the alert selection: ' + e.message);

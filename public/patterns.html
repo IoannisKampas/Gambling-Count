@@ -73,6 +73,12 @@ section{padding:18px 20px 4px}
 .tab.gC{color:color-mix(in srgb,var(--group-c) 80%,#fff)}
 .tab.on{background:var(--brand-surface);border-color:var(--brand)}
 .tab .n{font-weight:500;color:var(--ink-fainter);margin-left:6px}
+/* a pattern switched off in Settings cannot push, whatever the tables say */
+.tab.offpat{opacity:.4}
+/* the all-patterns view shows a count rather than an ambiguous button */
+.bellcount{font-family:var(--f-mono);font-weight:700;font-size:9px;letter-spacing:.06em;
+  padding:3px 5px;border-radius:4px;flex:none;color:var(--warn);
+  background:color-mix(in srgb,var(--warn) 12%,transparent)}
 
 .board{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(420px,1fr))}
 .tbl{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden}
@@ -95,16 +101,8 @@ section{padding:18px 20px 4px}
 .bell.on{opacity:1;filter:none;border-color:var(--warn);
   background:color-mix(in srgb,var(--warn) 16%,transparent)}
 /* some readings armed on this table, not all */
-.bell.part{opacity:.9;filter:none;border-color:color-mix(in srgb,var(--warn) 60%,transparent);
-  background:color-mix(in srgb,var(--warn) 7%,transparent)}
-/* one reading on one table: out of the way until the row is hovered, or it is armed */
-.rbell{font-size:10px;line-height:1;padding:2px 4px;margin-left:6px;border-radius:4px;
-  cursor:pointer;flex:none;border:1px solid transparent;background:none;opacity:0;
-  filter:grayscale(1)}
-.cell:hover .rbell,.solo .rbell{opacity:.55}
-.rbell:hover{opacity:1 !important;filter:none;border-color:var(--border-hover)}
-.rbell.on{opacity:1;filter:none;border-color:var(--warn);
-  background:color-mix(in srgb,var(--warn) 16%,transparent)}
+/* .bell.part is gone with the per-row bells: with one pattern chosen at a time the card's
+   bell is simply on or off, never partly on. */
 
 /* the current run, shown as a group letter — §2.1 keeps letter and colour together */
 .runmark{font-family:var(--f-mono);font-weight:700;font-size:11px;padding:2px 6px;border-radius:3px;
@@ -168,6 +166,10 @@ section{padding:18px 20px 4px}
   color:var(--ink-fainter);text-align:center;padding:40px 0}
 footer{padding:20px;font-family:var(--f-mono);font-size:9px;letter-spacing:.12em;
   text-transform:uppercase;color:var(--ink-fainter)}
+.guide{font-size:12px;color:var(--ink-dim);margin:0 0 12px}
+.guide b{color:var(--ink-2)}
+.guide a{color:var(--brand-ink)}
+.guide.warn{color:var(--warn)}
 .legend{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:12px;
   font-family:var(--f-mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;
   color:var(--ink-fainter)}
@@ -216,9 +218,9 @@ footer{padding:20px;font-family:var(--f-mono);font-size:9px;letter-spacing:.12em
     <option value="4">≤ −4</option>
   </select>
   <button id="armedonly">Armed only</button>
-  <button id="bellsonly" title="show only the tables that push to Telegram">🔔 Selected</button>
-  <button id="bellshown" title="arm Telegram pushes for every table currently listed below">🔔 Arm shown</button>
-  <button id="bellclear" title="stop Telegram pushes for every table">🔔 None</button>
+  <button id="bellsonly" title="show only the tables that push the chosen pattern">🔔 Pushing only</button>
+  <button id="bellshown">🔔 Push all shown</button>
+  <button id="bellclear">🔔 Push none</button>
   <button id="follow" title="show only the tables selected on the Settings page">Following settings</button>
 </header>
 
@@ -228,6 +230,8 @@ footer{padding:20px;font-family:var(--f-mono);font-size:9px;letter-spacing:.12em
 
   <!-- which reading the filters, sorting and the single-reading view apply to -->
   <div class="tabs" id="tabs"></div>
+
+  <div class="guide" id="guide"></div>
 
   <div class="legend">
     <span><span class="swatch" style="background:var(--group-a)"></span><b>A</b> 0,1,2,3,6,7,8,10,13,14,17,20,23,25,26,27,28,29</span>
@@ -257,6 +261,8 @@ let armedOnly = false;
 // on this one wheel only" is a normal thing to want: it fires far more often than the run
 // readings, so arming it everywhere buries them.
 let pushArmed = {}, pushPairs = 0;
+// the patterns switched on in Settings; only these can push at all
+let pushEnabled = new Set();
 let pushAll = false, pushConfigured = false, pushDepth = 4, pushDepths = {};
 let bellsOnly = false;
 let focusId = '';          // '' = show every reading on every card
@@ -318,6 +324,15 @@ const armState = (tableId) => {
   return v.length >= readings.length ? 'all' : 'some';
 };
 const armedSomewhere = (tableId) => armState(tableId) !== 'none';
+// how many tables push a given pattern, and how many patterns a given table pushes
+const armedTables = (readingId) => (pushAll ? tables.length : Object.values(pushArmed)
+  .filter((v) => v === '*' || (Array.isArray(v) && v.includes(readingId))).length);
+const patternsOn = (tableId) => {
+  if (pushAll) return readings.length;
+  const v = pushArmed[tableId];
+  if (!v) return 0;
+  return v === '*' ? readings.length : v.length;
+};
 // the readings in display order: a pair per row (§1.1), deepest arming last
 const PAIRS = [['allin1','allin2'],['monada','monada2'],['diada','diada2'],
   ['triada','triada2'],['tetrada','tetrada2'],['pentada','pentada2'],['enaduo','enaduo2'],
@@ -335,13 +350,15 @@ const anyArmed = (t) => (focusId
   : readings.some((r) => t.reads[r.id].phase === 'INTERRUPTED'));
 
 function tabs(){
-  const armedCount = (id) => tables.filter((t) => t.reads[id] && t.reads[id].phase === 'INTERRUPTED').length;
-  const html = ['<span class="tab' + (focusId ? '' : ' on') + '" data-id="">All</span>'];
+  const html = ['<span class="tab' + (focusId ? '' : ' on') + '" data-id="">All patterns</span>'];
   for (const id of ORDER) {
     const r = reading(id); if (!r) continue;
-    html.push('<span class="tab ' + sideCls(r) + (focusId === id ? ' on' : '') + '" data-id="' + id +
-      '" title="' + r.needs + '">' + r.label +
-      '<span class="n">' + armedCount(id) + '</span></span>');
+    const n = armedTables(id);
+    const off = pushEnabled.size && !pushEnabled.has(id);
+    html.push('<span class="tab ' + sideCls(r) + (focusId === id ? ' on' : '') +
+      (off ? ' offpat' : '') + '" data-id="' + id + '" title="' + r.needs +
+      (off ? ' — switched off for alerts in Settings' : '') + '">' + r.label +
+      (n ? '<span class="n">🔔' + n + '</span>' : '') + '</span>');
   }
   const el = $('#tabs');
   const next = html.join('');
@@ -381,20 +398,7 @@ function cell(r, p, t){
       (p.lastEvent && p.lastEvent !== 'NONE'
         ? '<span class="evt ' + p.lastEvent + '">' + p.lastEvent + '</span>' : '') +
     '</span>' +
-    readingBell(r, t) +
   '</div>';
-}
-
-// Arms one reading on one table - the control that answers "Andreas Deluxe on this wheel
-// only". The card's own bell is the all-or-nothing shortcut over the same thing.
-function readingBell(r, t){
-  if (!t) return '';
-  const on = armedFor(t.id, r.id);
-  const why = pushAll ? 'ALERT_ALL=1: everything pushes'
-    : on ? 'pushing ' + r.label + ' on this table — click to stop'
-         : 'push ' + r.label + ' on this table';
-  return '<button class="rbell' + (on ? ' on' : '') + '" data-bell-table="' + t.id +
-    '" data-bell-reading="' + r.id + '" title="' + why + '">🔔</button>';
 }
 
 // the chosen reading, with everything known about it
@@ -403,7 +407,7 @@ function solo(r, p, t){
   return '<div class="solo">' +
     '<div class="' + depthCls(p.count) + ' big">' + fmt(p.count) + '</div>' +
     '<div class="col">' +
-      '<div class="lab ' + sideCls(r) + '">' + r.label + readingBell(r, t) +
+      '<div class="lab ' + sideCls(r) + '">' + r.label +
         (r.id === alerting ? ' · alerting' : '') +
         (p.lastEvent && p.lastEvent !== 'NONE'
           ? '<span class="evt ' + p.lastEvent + '">' + p.lastEvent + '</span>' : '') + '</div>' +
@@ -436,16 +440,20 @@ function card(t){
     : '<div class="reads">' + ORDER.map((id) => {
         const r = reading(id); return r && t.reads[id] ? cell(r, t.reads[id], t) : '';
       }).join('') + '</div>';
-  const state8 = armState(t.id);
-  const armedList = pushArmed[t.id];
-  const which = state8 === 'all' ? 'every reading'
-    : state8 === 'some' ? (armedList || []).map((id) => (reading(id) || {}).label || id).join(', ')
-    : 'nothing';
-  const bell = '<button class="bell' + (state8 === 'all' ? ' on' : state8 === 'some' ? ' part' : '') +
-    '" data-bell="' + t.id + '" title="' +
-    (pushAll ? 'ALERT_ALL=1: every table pushes'
-             : 'Telegram: ' + which + ' — click to arm every reading, or none') +
-    '">🔔</button>';
+  // One control, one meaning: with a pattern chosen in the tabs, the bell says whether
+  // THIS table pushes THAT pattern. In the all-patterns view there is nothing
+  // unambiguous for it to do, so it becomes a read-only count instead of a button.
+  const chosen = focusId ? reading(focusId) : null;
+  const bell = chosen
+    ? '<button class="bell' + (armedFor(t.id, chosen.id) ? ' on' : '') + '" data-bell="' + t.id +
+      '" title="' + (pushAll ? 'ALERT_ALL=1: everything pushes'
+        : armedFor(t.id, chosen.id)
+          ? 'pushing ' + chosen.label + ' for this table — click to stop'
+          : 'push ' + chosen.label + ' for this table') + '">🔔</button>'
+    : (patternsOn(t.id)
+      ? '<span class="bellcount" title="this table pushes ' + patternsOn(t.id) +
+        ' of ' + readings.length + ' patterns — choose a pattern tab to change that">🔔 ' + patternsOn(t.id) + '</span>'
+      : '');
   return { key: t.id, cls: 'tbl' + (t.desynced ? ' desync' : ''), html:
     '<div class="thead">' +
       bell +
@@ -493,7 +501,7 @@ function render(){
       if (rules.hideNoResults && n === 0) return false;
       if (rules.minSpins && n < rules.minSpins) return false;
     }
-    if (bellsOnly && !armedSomewhere(t.id)) return false;
+    if (bellsOnly && !(focusId ? armedFor(t.id, focusId) : armedSomewhere(t.id))) return false;
     if (prov && t.provider !== prov) return false;
     if (q && !t.name.toLowerCase().includes(q)) return false;
     if (minc && depthOf(t) < minc) return false;
@@ -515,7 +523,7 @@ function render(){
   // an empty board has three quite different causes; saying which saves a hunt
   $('#empty').textContent = !tables.length ? 'No tables tracked yet — waiting for the roulette feed'
     : (bellsOnly && !Object.keys(pushArmed).length && !pushAll)
-      ? 'No tables are armed for Telegram yet — click 🔔 on a card, or “Arm shown”'
+      ? 'Nothing pushes this pattern yet — click the bell on a table, or “Push all shown”'
       : 'No tables match these filters';
   patch($('#board'), rows.map(card));
   tabs();
@@ -526,12 +534,32 @@ function render(){
   const desync = rows.filter((t) => t.desynced).length;
   const excluded = tables.length - rows.length;
   const scope = focusId ? (reading(focusId) || {}).label : readings.length + ' readings';
+  // One sentence saying what a click does here, plus a warning when the chosen pattern
+  // cannot push at all because it is switched off in Settings.
+  const g = $('#guide');
+  const picked = focusId ? reading(focusId) : null;
+  const offInSettings = picked && pushEnabled.size && !pushEnabled.has(picked.id);
+  g.classList.toggle('warn', !!offInSettings);
+  g.innerHTML = !pushConfigured
+    ? 'Telegram is not configured, so nothing can push.'
+    : pushAll ? '<b>ALERT_ALL=1</b> is set: every table pushes every pattern.'
+    : offInSettings
+      ? '<b>' + picked.label + '</b> is switched off for alerts — turn it on in <a href="/settings">Settings</a> first.'
+      : picked
+        ? 'Click the bell on a table to push <b>' + picked.label + '</b> for it, at −' +
+          (pushDepths[picked.id] || picked.alertDepth || pushDepth) + '. Pushing on <b>' +
+          armedTables(picked.id) + '</b> of ' + tables.length + ' tables.'
+        : 'Choose a pattern above to pick which roulettes push it. Patterns are switched on in <a href="/settings">Settings</a>.';
+  $('#bellshown').textContent = focusId ? '🔔 Push all shown' : '🔔 Push every pattern here';
+  $('#bellclear').textContent = focusId ? '🔔 Push none of this' : '🔔 Push nothing at all';
   $('#follow').classList.toggle('on', followSettings);
   $('#follow').textContent = followSettings ? 'Following settings' : 'All tables';
   const pushNote = !pushConfigured ? 'push off'
     : pushAll ? '🔔 every table'
-    : Object.keys(pushArmed).length
-      ? '🔔 ' + Object.keys(pushArmed).length + ' tables, ' + pushPairs + ' readings'
+    : focusId
+      ? '🔔 ' + ((reading(focusId) || {}).label || '') + ' on ' + armedTables(focusId) + ' tables'
+      : Object.keys(pushArmed).length
+        ? '🔔 ' + Object.keys(pushArmed).length + ' tables armed'
     : '🔔 none selected';
   $('#tally').textContent = tables.length + ' tracked · ' + scope + ' · ' + pushNote +
     (followSettings && hidden.size ? ' · ' + hidden.size + ' off in settings' : '');
@@ -589,21 +617,25 @@ $('#bellshown').addEventListener('click', () => {
     post({ tables: Object.fromEntries(ids.map((id) => [id, '*'])) });
   }
 });
-$('#bellclear').addEventListener('click', () => post({ clear: true }));
+$('#bellclear').addEventListener('click', () => {
+  if (!focusId) { post({ clear: true }); return; }
+  // this pattern, dropped from every table, leaving their other patterns alone
+  const next = {};
+  const all = readings.map((r) => r.id);
+  for (const [id, v] of Object.entries(pushArmed)) {
+    const rest = (v === '*' ? all : v).filter((x) => x !== focusId);
+    if (rest.length) next[id] = rest;
+  }
+  post({ tables: next });
+});
 // Toggling a bell writes through to the server and updates the card immediately, so the
 // click feels instant even though the next poll is up to a second away.
 $('#board').addEventListener('click', (e) => {
-  // a bell inside a reading's row arms just that reading on that table
-  const cellBell = e.target.closest('.rbell');
-  if (cellBell) {
-    const { bellTable, bellReading } = cellBell.dataset;
-    post({ id: bellTable, reading: bellReading, on: !armedFor(bellTable, bellReading) });
-    return;
-  }
-  // the bell in the card header arms the whole table, or clears it
+  // the bell belongs to the pattern chosen in the tabs; in the all-patterns view it is
+  // a count, not a button
   const b = e.target.closest('.bell');
-  if (!b) return;
-  post({ id: b.dataset.bell, on: armState(b.dataset.bell) !== 'all' });
+  if (!b || !focusId) return;
+  post({ id: b.dataset.bell, reading: focusId, on: !armedFor(b.dataset.bell, focusId) });
 });
 $('#tabs').addEventListener('click', (e) => {
   const tab = e.target.closest('.tab'); if (!tab) return;
@@ -625,6 +657,7 @@ async function poll(){
     if (j.push) {
       pushArmed = j.push.armed || {};
       pushPairs = j.push.pairs || 0;
+      pushEnabled = new Set(j.push.enabled || readings.map((r) => r.id));
       pushAll = !!j.push.all;
       pushConfigured = !!j.push.configured;
       pushDepth = j.push.depth || 4;

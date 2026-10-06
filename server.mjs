@@ -736,7 +736,10 @@ function alertGate(rows) {
     }
   }
   if (!alertTables.size && !envIds.size) return false;
-  return (tableId, readingId) => envIds.has(tableId) || alertTables.has(tableId, readingId);
+  // envIds are armed for every pattern, but still only the patterns switched on
+  return (tableId, readingId) =>
+    alertTables.isEnabled(readingId) &&
+    (envIds.has(tableId) || alertTables.has(tableId, readingId));
 }
 
 function patternTick() {
@@ -824,6 +827,8 @@ async function routeRest(req, res, url) {
         tables: alertTables.list(),       // tables with anything armed
         armed: alertTables.map(),         // table -> '*' | [readingId], for the bells
         pairs: alertTables.pairs(READINGS.length),
+        enabled: alertTables.enabledList(READING_IDS),   // patterns chosen on /settings
+        allEnabled: alertTables.allEnabled(),
         all: ALERT_ALL,
         fromEnv: ALERT_TABLES },
       at: Date.now(),
@@ -843,11 +848,29 @@ async function routeRest(req, res, url) {
       readings: READINGS,
       depths,
       armed: alertTables.map(),          // table -> '*' | [readingId]
+      enabled: alertTables.enabledList(READING_IDS),
       armedTables: alertTables.list().length,
       armedPairs: alertTables.pairs(READINGS.length),
       all: ALERT_ALL,
       tz: process.env.ALERT_TZ || 'Europe/Athens',
       at: Date.now(),
+    });
+  }
+
+  // Which patterns may alert at all - the switches on /settings. `{ readings: [...] }`
+  // replaces the list, `{ id, on }` flips one, `{ all: true }` turns every pattern on.
+  if (url.pathname === '/api/alerts/readings' && req.method === 'POST') {
+    let body = {};
+    try { body = await readJson(req); } catch {}
+    let list;
+    if (body.all) list = alertTables.setEnabled(null, READING_IDS);
+    else if (Array.isArray(body.readings)) list = alertTables.setEnabled(body.readings, READING_IDS);
+    else if (body.id) list = alertTables.toggleEnabled(String(body.id), body.on, READING_IDS);
+    else return json(res, 400, { error: 'send { readings: [...] }, { id, on } or { all: true }' });
+    log.info('alert patterns: ' + (alertTables.allEnabled() ? 'all ' + READINGS.length : list.length) +
+      ' enabled');
+    return json(res, 200, {
+      ok: true, enabled: list, allEnabled: alertTables.allEnabled(),
     });
   }
 
@@ -1113,6 +1136,8 @@ server.listen(PORT, HOST, async () => {
   if (!telegram.configured) {
     log.info('telegram alerts off (set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)');
   } else {
+    const offs = READINGS.filter((r) => !alertTables.isEnabled(r.id)).map((r) => r.label);
+    if (offs.length) log.info('patterns switched off for alerts: ' + offs.join(', '));
     const scope = ALERT_ALL ? 'every table'
       : (alertTables.size + ALERT_TABLES.length)
         ? alertTables.size + ' selected table' + (alertTables.size === 1 ? '' : 's') +

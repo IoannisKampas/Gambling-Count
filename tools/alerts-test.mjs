@@ -270,6 +270,36 @@ section('arming one reading on one table');
     'and its next deepening pushes');
 }
 
+section('patterns switched off in Settings cannot push');
+{
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'alertsw-'));
+  const file = path.join(dir, 'alerts.json');
+  const quietLog = { info() {}, warn() {}, error() {} };
+  const ALL_IDS = ['monada', 'diada', 'andreas'];
+
+  const sel = new AlertSelection({ file, log: quietLog });
+  sel.toggleTable('t1', true);                       // every pattern on this table
+  ok(sel.has('t1', 'monada') && sel.has('t1', 'andreas'), 'armed for everything to start');
+
+  sel.setEnabled(['monada'], ALL_IDS);               // Settings: only Monada may alert
+  ok(sel.has('t1', 'monada'), 'the enabled pattern still pushes');
+  ok(!sel.has('t1', 'andreas') && !sel.has('t1', 'diada'),
+    'a pattern switched off cannot push even on an armed table');
+  ok(sel.enabledList(ALL_IDS).join() === 'monada', 'the list is what was chosen',
+    sel.enabledList(ALL_IDS).join());
+
+  // turning them all on is stored as "every pattern", so a new reading is on by default
+  sel.setEnabled(ALL_IDS, ALL_IDS);
+  ok(sel.allEnabled(), 'all of them means every pattern');
+  ok(sel.has('t1', 'a-reading-added-later'), 'including one added afterwards');
+
+  sel.toggleEnabled('andreas', false, ALL_IDS);
+  const reloaded = new AlertSelection({ file, log: quietLog });
+  ok(!reloaded.isEnabled('andreas') && reloaded.isEnabled('monada'),
+    'the choice survives a restart', JSON.stringify(reloaded.enabledList(ALL_IDS)));
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
 section('the selection survives a restart');
 {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'alertsel-'));
