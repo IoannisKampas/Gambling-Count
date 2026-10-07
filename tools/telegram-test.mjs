@@ -30,19 +30,20 @@ if (!tg.configured) {
 const args = process.argv.slice(2);
 const custom = args.filter((a) => !a.startsWith('--')).join(' ').trim();
 const rule = (id) => READINGS.find((r) => r.id === id);
-const sample = (id, count, table, provider, spins, armed = false) =>
-  ({ label: rule(id).label, rule: rule(id), count, table, provider, spins, armed });
+const sample = (id, count, table, provider, spins, bet = 'A') =>
+  ({ label: rule(id).label, rule: rule(id), count, table, provider, spins, bet,
+    depth: rule(id).alertDepth });
 
 const items = args.includes('--many')
   ? [
-    sample('monada', -4, 'Brazilian Roulette', 'pragmatic', [12, 7, 0, 4, 18, 3], true),
-    sample('triada2', -5, 'French Roulette la Partage', 'pragmatic', [21, 33, 5, 16, 9, 2]),
-    sample('allin1', -4, 'Mega Roulette 3000', 'playtech', [26, 14, 29, 11, 36, 20]),
-    sample('diada', -4, 'Turkish Mega Roulette', 'pragmatic', [8, 15, 22, 31, 1, 17]),
-    sample('enaduo2', -6, 'Speed Auto Roulette', 'pragmatic', [3, 24, 30, 6, 13, 35]),
-    sample('andreas', -8, 'Roulette Italia Tricolore', 'pragmatic', [19, 1, 7, 11, 36, 2]),
+    sample('monada', -14, 'Brazilian Roulette', 'pragmatic', [12, 7, 0, 4, 18, 3], 'A'),
+    sample('triada2', -11, 'French Roulette la Partage', 'pragmatic', [21, 33, 5, 16, 9, 2], 'B'),
+    sample('allin1', -15, 'Mega Roulette 3000', 'playtech', [26, 14, 29, 11, 36, 20], 'B'),
+    sample('diada', -13, 'Turkish Mega Roulette', 'pragmatic', [8, 15, 22, 31, 1, 17], 'A'),
+    sample('enaduo2', -6, 'Speed Auto Roulette', 'pragmatic', [3, 24, 30, 6, 13, 35], 'B'),
+    sample('andreas', -8, 'Roulette Italia Tricolore', 'pragmatic', [19, 1, 7, 11, 36, 2], 'C'),
   ]
-  : [sample('monada', -4, 'Brazilian Roulette', 'pragmatic', [12, 7, 0, 4, 18, 3], true)];
+  : [sample('monada', -14, 'Brazilian Roulette', 'pragmatic', [12, 7, 0, 4, 18, 3], 'A')];
 
 const text = custom || formatBatch(items, Number(process.env.ALERT_DEPTH || 4), {
   tz: process.env.ALERT_TZ || 'Europe/Athens',

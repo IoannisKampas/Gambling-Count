@@ -234,7 +234,7 @@ section('a reading can set its own push depth');
     table: 'Greek Roulette', provider: 'pragmatic', label: r.label, rule: r,
     count: -5, previous: -4, spins: [12, 7, 1, 4, 18], armed: false,
   });
-  ok(block.startsWith('🟣'), 'it is marked with the group-C colour', block.split('\n')[0]);
+  ok(block.split('\n')[0].startsWith('🎰'), 'the first line is the table', block.split('\n')[0]);
   ok(block.includes('⚪12') && block.includes('🟣10') === false,
     'non-members are marked as misses', block.split('\n')[2]);
   const withHit = formatAlertBlock({
@@ -251,7 +251,7 @@ section('a reading can set its own push depth');
     { table: 'T', label: 'Monada', rule: monada, count: -4, spins: [1] },
     { table: 'U', label: 'Andreas Deluxe', rule: andreas, count: -5, spins: [1] },
   ], 4, { tz: 'UTC' }).split('\n')[0];
-  ok(head.includes('−8'), 'the header quotes the shallowest threshold in the batch', head);
+  ok(head === '⚠️ <b>2 alerts</b>', 'a batch is headed by how many it carries', head);
 
   // and it follows the threshold actually in force, not the reading's default: an
   // ALERT_DEPTHS override was being reported with the wrong number in the message
@@ -261,8 +261,8 @@ section('a reading can set its own push depth');
   const hit = scan(st, [row({ andreas: -3 })], tuned);
   ok(hit.length === 1 && hit[0].depth === 3, 'an alert carries the depth that fired it',
     JSON.stringify(hit.map((h) => h.depth)));
-  ok(formatBatch(hit, 4, { tz: 'UTC' }).startsWith('🎯 <b>−3 or deeper</b>'),
-    'and the header says −3, not the reading’s own −8',
+  ok(formatBatch(hit, 4, { tz: 'UTC' }).startsWith('🎰'),
+    'a single alert is just its own block, with no header',
     formatBatch(hit, 4, { tz: 'UTC' }).split('\n')[0]);
 }
 
@@ -380,7 +380,7 @@ section('message text');
 const rule = (id) => READINGS.find((r) => r.id === id);
 const alert = (o = {}) => ({
   table: 'Greek Roulette', provider: 'pragmatic', label: 'Monada', rule: rule('monada'),
-  count: -4, previous: -3, spins: [12, 7, 0, 4, 18, 3], armed: false, ...o,
+  count: -4, previous: -3, spins: [12, 7, 0, 4, 18, 3], armed: false, bet: 'A', ...o,
 });
 {
   const line = formatAlert(alert());
@@ -396,19 +396,31 @@ const alert = (o = {}) => ({
   ok(spinStrip([]) === '', 'no spins is empty, not a stray marker');
 }
 {
-  const block = formatAlertBlock(alert({ armed: true }));
-  const lines = block.split('\n');
-  ok(lines.length === 4, 'an armed block is four lines', String(lines.length));
-  ok(lines[0].includes('🔵') && lines[0].includes('<b>Monada</b>') && lines[0].includes('−4'),
-    'line 1: group colour, reading, depth', lines[0]);
-  ok(lines[1].includes('<b>Greek Roulette</b>'), 'line 2: the table in bold', lines[1]);
-  ok(lines[3].includes('next spin decides'), 'line 4: only when armed', lines[3]);
-  ok(formatAlertBlock(alert({ armed: false })).split('\n').length === 3,
-    'an unarmed block drops that line');
-  ok(formatAlertBlock(alert({ rule: rule('allin1'), label: 'All in 1' })).startsWith('⚪'),
-    'the All in pair take neither group colour');
-  ok(formatAlertBlock(alert({ rule: rule('monada2'), label: 'Monada 2' })).startsWith('🟠'),
-    'a group-B reading is orange');
+  // table, pattern and count, the group to bet with its colour and numbers, then the
+  // recent spins - in that order
+  const lines = formatAlertBlock(alert({ bet: 'A' })).split('\n');
+  ok(lines.length === 4, 'a block with a bet group is four lines', String(lines.length));
+  ok(lines[0].startsWith('🎰') && lines[0].includes('<b>Greek Roulette</b>') &&
+    lines[0].includes('(pragmatic)'), 'line 1: the table and its provider', lines[0]);
+  ok(lines[1].startsWith('🎯') && lines[1].includes('<b>Monada</b>') &&
+    lines[1].includes('−4'), 'line 2: the pattern and the count', lines[1]);
+  ok(lines[2].startsWith('🎲') && lines[2].includes('Group A') &&
+    lines[2].includes('Blue'), 'line 3: the group to bet, named and coloured', lines[2]);
+  ok(lines[3].includes('🟠12') && lines[3].includes('🔵7'),
+    'line 4: the recent numbers, newest first', lines[3]);
+  ok(!/[0-9] {2}[0-9]/.test(lines[2]), 'and the group numbers are not listed out', lines[2]);
+
+  // the colour follows the group, not the reading
+  const b = formatAlertBlock(alert({ bet: 'B' })).split('\n');
+  ok(b[2].includes('Group B') && b[2].includes('Orange') && b[2].includes('🟠'),
+    'group B is orange', b[2]);
+  const c = formatAlertBlock(alert({ bet: 'C', rule: rule('andreas'), label: 'Andreas Deluxe' })).split('\n');
+  ok(c[2].includes('Group C') && c[2].includes('Purple') && c[2].includes('🟣'),
+    'group C is purple', c[2]);
+
+  // without a bet group it is just the three lines
+  ok(formatAlertBlock(alert({ bet: null })).split('\n').length === 3,
+    'no bet group means no bet lines');
 }
 {
   // table names come from the operators; one with HTML in it must not break the message
@@ -418,12 +430,12 @@ const alert = (o = {}) => ({
 }
 {
   const one = formatBatch([alert()], 4, { tz: 'UTC' });
-  // Monada carries its own −12, and the header states the depth that actually applies
-  ok(one.startsWith('🎯 <b>−14 or deeper</b>'), 'the header states that reading’s threshold',
+  ok(one.startsWith('🎰 <b>Greek Roulette</b>'), 'one alert starts with its table',
     one.split('\n')[0]);
   ok(!one.includes('tables'), 'a single alert does not say "1 tables"');
   const three = formatBatch([alert(), alert(), alert()], 4, { tz: 'UTC' });
-  ok(three.includes('3 tables'), 'several alerts are counted in the header');
+  ok(three.startsWith('⚠️ <b>3 alerts</b>'), 'several alerts are counted in the header',
+    three.split('\n')[0]);
   ok(three.split('\n\n').length === 4, 'few alerts are separate blocks', String(three.split('\n\n').length));
   const six = formatBatch(Array.from({ length: 6 }, () => alert()), 4, { tz: 'UTC' });
   ok(six.split('\n').filter((l) => l.includes('Monada')).length === 6,
@@ -467,8 +479,8 @@ const quiet = { info() {}, warn() {}, error() {} };
   await sleep(80);
   ok(calls.length === 1, '12 alerts coalesce into one message', 'sent ' + calls.length);
   ok((calls[0].text.match(/alert \d+/g) || []).length === 12, 'all 12 lines are in it');
-  ok(calls[0].text.startsWith('🎯 <b>−4 or deeper</b>') && calls[0].text.includes('12 tables'),
-    'the header states the threshold and counts them', calls[0].text.split('\n')[0]);
+  ok(calls[0].text.startsWith('⚠️ <b>12 alerts</b>'),
+    'the header counts what the message carries', calls[0].text.split('\n')[0]);
 }
 {
   // the per-minute bucket holds the rest back rather than letting Telegram throttle us.

@@ -35,6 +35,7 @@ export class AlertLog {
       side: (a.rule && a.rule.side) || null,
       count: a.count,
       previous: a.previous,
+      bet: a.bet || null,          // the group the message told you to bet on
       depth: depths[a.reading] || (a.rule && a.rule.alertDepth) || null,
       spins: a.spins || [],
       status: 'queued',

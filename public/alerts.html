@@ -153,7 +153,7 @@ footer{padding:20px;font-family:var(--f-mono);font-size:9px;letter-spacing:.12em
   <div class="thresholds" id="thresholds"></div>
   <table>
     <thead><tr>
-      <th>Time</th><th>Reading</th><th>Count</th><th>Table</th><th>Spins at the time</th><th>Status</th>
+      <th>Time</th><th>Reading</th><th>Count</th><th>Bet on</th><th>Table</th><th>Spins at the time</th><th>Status</th>
     </tr></thead>
     <tbody id="rows"></tbody>
   </table>
@@ -262,6 +262,11 @@ function render(){
         '<br><span style="opacity:.6;font-weight:500">pushes −' + (e.depth || depths[e.reading] || '?') + '</span></td>' +
       '<td class="' + depthCls(e.count) + '">−' + Math.abs(e.count) +
         (e.previous ? '<br><span class="t" style="font-size:9px">was −' + Math.abs(e.previous) + '</span>' : '') + '</td>' +
+      '<td class="mono">' + (e.bet
+        ? ({ A: '🔵', B: '🟠', C: '🟣' }[e.bet] || '') + ' ' + e.bet +
+          '<br><span style="opacity:.6;font-size:9px">' +
+          ({ A: 'Blue', B: 'Orange', C: 'Purple' }[e.bet] || '') + '</span>'
+        : '—') + '</td>' +
       '<td><span class="tb">' + esc(e.table) + '</span>' +
         (e.provider ? '<br><span class="t" style="font-size:9px">' + esc(e.provider) + '</span>' : '') + '</td>' +
       '<td>' + spins(e) + '</td>' +

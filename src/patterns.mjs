@@ -44,6 +44,34 @@ export function groupOf(n) {
   return A_SET.has(n) ? 'A' : 'B';
 }
 
+// Which group's arrival would BREAK this count - reset it to 0. It is the group to bet on
+// if you are betting against the pattern, and the group the alert names.
+//
+// It is a property of the reading, not a strategy: the All in pair deepen when the
+// original group returns, so what breaks them is the interruption carrying on; every
+// other run reading is the reverse. A streak reading is broken by whatever ends the
+// streak - the other group for Serie, a group-C number for Andreas Deluxe.
+//
+// Returns 'A' | 'B' | 'C', or null when the reading is not currently in a state that can
+// be broken by one spin (a run reading that is not armed).
+export function breakingGroup(reading, state) {
+  if (!reading) return null;
+  if (reading.kind === 'streak') {
+    if (reading.deepensOn === 'out') return reading.group;        // a C number resets it
+    return reading.group === 'A' ? 'B' : 'A';                     // the other group ends the run
+  }
+  if (!state || state.phase !== PHASE.INTERRUPTED) return null;
+  return reading.deepensOnReturn ? state.runGroup : state.originGroup;
+}
+
+// The numbers in a group, by name.
+export function groupNumbers(name) {
+  if (name === 'A') return GROUP_A;
+  if (name === 'B') return GROUP_B;
+  if (name === 'C') return GROUP_C;
+  return [];
+}
+
 export const PHASE = { BUILDING: 'BUILDING', INTERRUPTED: 'INTERRUPTED' };
 export const EVENT = { NONE: 'NONE', ARMED: 'ARMED', COUNT: 'COUNT', RESET: 'RESET' };
 

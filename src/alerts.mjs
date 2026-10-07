@@ -22,7 +22,7 @@
 // module can do either: `only` restricts it to a set of readings, and the default is
 // every reading, which is what the operator of this app asked for.
 
-import { groupOf, inGroup } from './patterns.mjs';
+import { groupOf, inGroup, breakingGroup } from './patterns.mjs';
 
 export const DEFAULT_DEPTH = 4;
 
@@ -90,6 +90,9 @@ export function scan(state, tables, {
           label: (rule && rule.label) || id,
           rule,
           depth: limit,          // the threshold actually in force, overrides included
+          // the group whose arrival would reset this count: what to bet against the
+          // pattern, and what the message names
+          bet: breakingGroup(rule, p),
           count,
           previous: prev,
           spins: (t.spins || []).slice(0, 8),   // newest first, as the feed delivers
@@ -117,7 +120,8 @@ const esc = (s) => String(s == null ? '' : s)
 // Group A is blue and group B orange everywhere in this app (PATTERNS.md §2.1); the
 // same two colours carry into the message, so a spin strip reads the same on a phone
 // as on the wall. The number is always shown as well, so nothing rests on colour.
-const DOT = { A: '🔵', B: '🟠' };
+const DOT = { A: '🔵', B: '🟠', C: '🟣' };
+const COLOUR = { A: 'Blue', B: 'Orange', C: 'Purple' };
 // A group-C reading is about one membership that cuts across A and B, so its strip is
 // marked by that instead: in the group, or not. A/B colours would say nothing about why
 // that count moved. Serie 1 and 2 are group A and B themselves, so they keep the usual
@@ -137,14 +141,19 @@ export function spinStrip(spins = [], rule = null) {
   }).join(' ');
 }
 
-// One alert, as a small block: reading and depth, the table, the spins.
+// One alert: the table, the pattern and its count, the group to bet on, and the recent
+// numbers - in that order, because that is the order they are acted on.
 export function formatAlertBlock(a) {
   const lines = [
-    mark(a) + ' <b>' + esc(a.label) + '</b>   <b>−' + Math.abs(a.count) + '</b>',
-    '<b>' + esc(a.table) + '</b>' + (a.provider ? '  ·  ' + esc(a.provider) : ''),
+    '🎰 <b>' + esc(a.table) + '</b>' + (a.provider ? ' (' + esc(a.provider) + ')' : ''),
+    '🎯 <b>' + esc(a.label) + '</b> : <b>−' + Math.abs(a.count) + '</b>',
   ];
+  // The group and its colour, not its numbers: whoever reads this knows the groups, and
+  // nineteen numbers wrap badly on a phone.
+  if (a.bet) {
+    lines.push('🎲 Bet on <b>Group ' + a.bet + '</b> ' + DOT[a.bet] + ' ' + COLOUR[a.bet]);
+  }
   if (a.spins && a.spins.length) lines.push(spinStrip(a.spins, a.rule));
-  if (a.armed) lines.push('⏳ next spin decides');
   return lines.join('\n');
 }
 
@@ -156,9 +165,12 @@ function mark(a) {
   return rule.side === 'A' ? DOT.A : rule.side === 'B' ? DOT.B : '⚪';
 }
 
-// One alert on a single line, for when a burst would otherwise be a wall of text.
+// The same facts on one line, for when a burst would otherwise be a wall of text. The
+// group's numbers are dropped here; the group and its colour are not.
 export function formatAlertLine(a) {
-  return mark(a) + ' <b>' + esc(a.label) + ' −' + Math.abs(a.count) + '</b> · ' + esc(a.table) +
+  return '🎰 ' + esc(a.table) + ' · 🎯 <b>' + esc(a.label) + ' −' +
+    Math.abs(a.count) + '</b>' +
+    (a.bet ? ' · 🎲 <b>Group ' + a.bet + '</b> ' + DOT[a.bet] : '') +
     (a.spins && a.spins.length ? ' · ' + spinStrip(a.spins.slice(0, 6), a.rule) : '');
 }
 
@@ -183,22 +195,18 @@ const clock = (tz) => {
 export function formatBatch(items, depth = DEFAULT_DEPTH, { tz = 'Europe/Athens', link = '' } = {}) {
   const objects = items.filter((i) => typeof i !== 'string');
   const strings = items.filter((i) => typeof i === 'string');
-  const at = clock(tz);
-  // readings can carry their own threshold, so the header states the shallowest one in
-  // this message rather than claiming a single global depth
-  const depths = objects.map((o) => o.depth || (o.rule && o.rule.alertDepth) || depth);
-  const shallowest = depths.length ? Math.min(...depths) : depth;
-  const head = '🎯 <b>−' + shallowest + ' or deeper</b>' +
-    (items.length > 1 ? '  ·  ' + items.length + ' tables' : '') +
-    (at ? '  ·  ' + at : '');
+  // Telegram stamps the message with its own time, so there is no clock here. A single
+  // alert is just its block; a batch gets one line saying how many, because otherwise
+  // several tables run together on a phone.
+  const head = items.length > 1 ? '⚠️ <b>' + items.length + ' alerts</b>' : '';
 
-  // Blocks while there are few; one line each when a burst arrives, since five full
-  // blocks is already more than a phone shows at once.
-  const body = objects.length > 4
+  // Blocks while there are few; one line each when a burst arrives, since three full
+  // blocks with their number lists is already a long message.
+  const body = objects.length > 3
     ? objects.map(formatAlertLine).join('\n')
     : objects.map(formatAlertBlock).join('\n\n');
 
-  const parts = [head, ''];
+  const parts = head ? [head, ''] : [];
   if (body) parts.push(body);
   if (strings.length) parts.push(strings.join('\n'));
   if (link) { parts.push(''); parts.push('📊 ' + esc(link)); }
