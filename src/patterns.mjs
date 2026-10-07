@@ -60,8 +60,25 @@ export function breakingGroup(reading, state) {
     if (reading.deepensOn === 'out') return reading.group;        // a C number resets it
     return reading.group === 'A' ? 'B' : 'A';                     // the other group ends the run
   }
-  if (!state || state.phase !== PHASE.INTERRUPTED) return null;
-  return reading.deepensOnReturn ? state.runGroup : state.originGroup;
+  // A one-way reading arms from one group only, and resets when that group comes back, so
+  // the answer never depends on the current state. This matters: an alert fires on the
+  // spin that DEEPENED the count, by which point the reading has resolved its decider and
+  // is no longer armed - reading it off the state alone produced nothing at all.
+  if (reading.armsFrom) return reading.armsFrom;
+  // The All in pair arm from either group, so it depends on which run gets broken. While
+  // armed that is known; between arms it is not (see breakingHint).
+  if (state && state.phase === PHASE.INTERRUPTED) {
+    return reading.deepensOnReturn ? state.runGroup : state.originGroup;
+  }
+  return null;
+}
+
+// For the All in pair between arms: the rule in words, since the group is not yet decided.
+export function breakingHint(reading) {
+  if (!reading || reading.armsFrom || reading.kind === 'streak') return null;
+  return reading.deepensOnReturn
+    ? 'whichever group interrupts the next run'
+    : 'whichever group the next broken run belongs to';
 }
 
 // The numbers in a group, by name.

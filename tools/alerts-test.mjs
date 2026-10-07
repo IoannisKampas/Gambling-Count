@@ -376,6 +376,68 @@ section('the selection survives a restart');
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
+section('the bet group survives the moment an alert fires');
+{
+  // An alert fires on the spin that DEEPENED the count, by which point a run reading has
+  // resolved its decider and is back to BUILDING. Reading the group off the state alone
+  // produced nothing then, and the message lost its bet line entirely.
+  const notArmed = (counts) => ({
+    id: 't1', name: 'Greek Roulette', provider: 'pragmatic', desynced: false,
+    spins: [12, 7, 0],
+    reads: Object.fromEntries(READINGS.map((r) => [r.id, {
+      count: counts[r.id] ?? 0, phase: 'BUILDING', runGroup: 'B', runLength: 2,
+      originGroup: null, deepest: counts[r.id] ?? 0, resets: 0, spinsObserved: 9,
+      lastEvent: 'COUNT',
+    }])),
+  });
+
+  const oneWay = { monada: 'A', monada2: 'B', diada: 'A', diada2: 'B',
+    triada: 'A', triada2: 'B', enaduo: 'A', enaduo2: 'B' };
+  for (const [id, group] of Object.entries(oneWay)) {
+    const depth = READINGS.find((r) => r.id === id).alertDepth;
+    const st = createAlertState();
+    scan(st, [notArmed({ [id]: -(depth - 1) })], realOpts);
+    const hits = scan(st, [notArmed({ [id]: -depth })], realOpts);
+    ok(hits.length === 1 && hits[0].bet === group,
+      id + ' names group ' + group + ' even while unarmed',
+      JSON.stringify(hits.map((h) => h.bet)));
+    const block = formatAlertBlock(hits[0]);
+    ok(block.split('BETLINE').length === 1 && /Bet on <b>Group/.test(block),
+      id + ' keeps its bet line in the message', block.split('NEWLINE')[0]);
+    ok(block.split(String.fromCharCode(10)).length === 4, 'four lines, as specified',
+      String(block.split(String.fromCharCode(10)).length));
+  }
+
+  // The All in pair arm from either group, so between arms there is no single answer: the
+  // message states the rule instead of guessing.
+  for (const id of ['allin1', 'allin2']) {
+    const depth = READINGS.find((r) => r.id === id).alertDepth;
+    const st = createAlertState();
+    scan(st, [notArmed({ [id]: -(depth - 1) })], realOpts);
+    const hits = scan(st, [notArmed({ [id]: -depth })], realOpts);
+    ok(hits.length === 1 && !hits[0].bet && hits[0].betHint,
+      id + ' falls back to the rule in words', JSON.stringify(hits[0] && hits[0].betHint));
+    ok(/Bet on whichever group/.test(formatAlertBlock(hits[0])),
+      id + ' still has a bet line', formatAlertBlock(hits[0]).split(String.fromCharCode(10))[2]);
+  }
+
+  // and while it IS armed, the All in pair name the exact group
+  const armed = (count) => ({
+    id: 't2', name: 'Mega Roulette', provider: 'playtech', desynced: false, spins: [26, 14],
+    reads: Object.fromEntries(READINGS.map((r) => [r.id, {
+      count, phase: 'INTERRUPTED', runGroup: 'B', runLength: 1, originGroup: 'A',
+      deepest: count, resets: 0, spinsObserved: 9, lastEvent: 'ARMED',
+    }])),
+  });
+  const st2 = createAlertState();
+  scan(st2, [armed(-14)], realOpts);
+  const hits2 = scan(st2, [armed(-15)], realOpts);
+  const one = hits2.find((h) => h.reading === 'allin1');
+  const two = hits2.find((h) => h.reading === 'allin2');
+  ok(one && one.bet === 'B', 'armed, All in 1 names the interrupting group', one && one.bet);
+  ok(two && two.bet === 'A', 'armed, All in 2 names the origin group', two && two.bet);
+}
+
 section('message text');
 const rule = (id) => READINGS.find((r) => r.id === id);
 const alert = (o = {}) => ({

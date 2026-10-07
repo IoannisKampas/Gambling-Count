@@ -22,7 +22,7 @@
 // module can do either: `only` restricts it to a set of readings, and the default is
 // every reading, which is what the operator of this app asked for.
 
-import { groupOf, inGroup, breakingGroup } from './patterns.mjs';
+import { groupOf, inGroup, breakingGroup, breakingHint } from './patterns.mjs';
 
 export const DEFAULT_DEPTH = 4;
 
@@ -93,6 +93,7 @@ export function scan(state, tables, {
           // the group whose arrival would reset this count: what to bet against the
           // pattern, and what the message names
           bet: breakingGroup(rule, p),
+          betHint: breakingGroup(rule, p) ? null : breakingHint(rule),
           count,
           previous: prev,
           spins: (t.spins || []).slice(0, 8),   // newest first, as the feed delivers
@@ -152,6 +153,9 @@ export function formatAlertBlock(a) {
   // nineteen numbers wrap badly on a phone.
   if (a.bet) {
     lines.push('🎲 Bet on <b>Group ' + a.bet + '</b> ' + DOT[a.bet] + ' ' + COLOUR[a.bet]);
+  } else if (a.betHint) {
+    // the All in pair between arms: the group is not settled yet, so say the rule
+    lines.push('🎲 Bet on ' + esc(a.betHint));
   }
   if (a.spins && a.spins.length) lines.push(spinStrip(a.spins, a.rule));
   return lines.join('\n');
@@ -170,7 +174,8 @@ function mark(a) {
 export function formatAlertLine(a) {
   return '🎰 ' + esc(a.table) + ' · 🎯 <b>' + esc(a.label) + ' −' +
     Math.abs(a.count) + '</b>' +
-    (a.bet ? ' · 🎲 <b>Group ' + a.bet + '</b> ' + DOT[a.bet] : '') +
+    (a.bet ? ' · 🎲 <b>Group ' + a.bet + '</b> ' + DOT[a.bet]
+      : a.betHint ? ' · 🎲 ' + esc(a.betHint) : '') +
     (a.spins && a.spins.length ? ' · ' + spinStrip(a.spins.slice(0, 6), a.rule) : '');
 }
 
