@@ -25,21 +25,40 @@
 // doubling recover exactly. On a 19-number group it is less than double, so a win at step
 // 5 or 6 still loses money - the book records that rather than hiding it.
 
-import { READINGS, GROUP_A, GROUP_B, PHASE, groupOf } from './patterns.mjs';
+import { READINGS, GROUP_A, GROUP_B, GROUP_C, PHASE, groupOf, breakingGroup } from './patterns.mjs';
 
 const A_SET = new Set(GROUP_A);
-const SIZE = { A: GROUP_A.length, B: GROUP_B.length };
+const C_SET = new Set(GROUP_C);
+const SIZE = { A: GROUP_A.length, B: GROUP_B.length, C: GROUP_C.length };
+const hits = (group, n) => (group === 'A' ? A_SET.has(n)
+  : group === 'C' ? C_SET.has(n) : !A_SET.has(n));
 
-// The readings this strategy CAN bet: the ones with a decider. The streak readings
-// (Serie, Andreas Deluxe) have none - nothing arms, so there is no single spin to bet
-// into - and are excluded everywhere.
-export const BETTABLE = READINGS.filter((r) => r.kind !== 'streak').map((r) => r.id);
+// Per-pattern staking. The run readings all play the same way - wait for a decider,
+// stake the unit on the group that would break the count, double on a loss, stop at a
+// win - so they take the book's defaults.
+//
+// Andreas Deluxe cannot play that way: it has no decider. Its count IS a miss streak,
+// so the bet is on EVERY spin - the unit on each group-C number - and the martingale
+// follows the streak: a group-C number pays and resets the stake, a miss doubles it. It
+// therefore has its own unit and its own ladder, and never 'finishes' with a table.
+export const PLAY = {
+  andreas: { unit: 2, steps: 4, everySpin: true },
+};
 
-// What the simulation bets unless told otherwise: the ten asked for. Tetrada and Pentada
-// are bettable and can be switched on from /sim, but they are not on by default.
+// A reading can be bet if it has a decider, or a plan for betting every spin.
+const canBet = (r) => !!r && (r.kind !== 'streak' || !!(PLAY[r.id] && PLAY[r.id].everySpin));
+
+// The readings this strategy can bet: the ones with a decider, plus any streak reading
+// given an everySpin plan above. Serie 1 and 2 have neither, so they stay out: there is
+// no single spin to bet into and no stake plan for betting blind.
+export const BETTABLE = READINGS.filter(canBet).map((r) => r.id);
+
+// What the simulation bets unless told otherwise: the ten asked for, plus Andreas
+// Deluxe. Tetrada and Pentada are bettable and can be switched on from /sim, but they
+// are not on by default.
 export const DEFAULT_PATTERNS = [
   'allin1', 'allin2', 'monada', 'monada2', 'diada', 'diada2',
-  'triada', 'triada2', 'enaduo', 'enaduo2',
+  'triada', 'triada2', 'enaduo', 'enaduo2', 'andreas',
 ].filter((id) => BETTABLE.includes(id));
 
 export const DEFAULTS = {
@@ -51,15 +70,15 @@ export const DEFAULTS = {
   patterns: DEFAULT_PATTERNS,
 };
 
-// Which group's arrival RESETS this count - what we are betting on.
+// Which group's arrival RESETS this count - what we are betting on. Shared with the
+// alerts, so the message and the simulated bet can never name different groups.
 export function resetGroup(rule, state) {
-  if (!rule || rule.kind === 'streak') return null;
-  return rule.deepensOnReturn ? state.runGroup : state.originGroup;
+  return breakingGroup(rule, state);
 }
 
 const blankPattern = (steps) => ({
   sequences: 0, wins: 0, losses: 0, skipped: 0, bets: 0,
-  staked: 0, returned: 0, winsAtStep: Array(steps).fill(0),
+  staked: 0, returned: 0, winsAtStep: Array(Math.max(steps, 8)).fill(0),
 });
 
 export class PaperBook {
@@ -75,10 +94,7 @@ export class PaperBook {
     // bet already on the table has to be resolved whatever the picks say now.
     this.allow = typeof cfg.allow === 'function' ? cfg.allow : null;
     this.rules = new Map((cfg.readings || READINGS).map((r) => [r.id, r]));
-    this.patterns = (cfg.patterns || BETTABLE).filter((id) => {
-      const r = this.rules.get(id);
-      return r && r.kind !== 'streak';
-    });
+    this.patterns = (cfg.patterns || DEFAULT_PATTERNS).filter((id) => canBet(this.rules.get(id)));
     this.historyLimit = cfg.historyLimit || 120;
     this.spinsLimit = cfg.spinsLimit || 150;
     this.curveLimit = cfg.curveLimit || 400;
@@ -86,12 +102,26 @@ export class PaperBook {
     this.reset({ keepRunning: true });
   }
 
-  // stake per number at a step (1-based)
-  stakeAt(step) { return this.unit * 2 ** (step - 1); }
+  // The staking plan for one pattern: its own unit and ladder where it has them.
+  planFor(id) {
+    const p = PLAY[id] || {};
+    return {
+      unit: p.unit || this.unit,
+      steps: p.steps || this.steps,
+      everySpin: !!p.everySpin,
+    };
+  }
+
+  // stake per number at a step (1-based), for a pattern or for the book's default
+  stakeAt(step, id) {
+    const plan = id ? this.planFor(id) : { unit: this.unit };
+    return plan.unit * 2 ** (step - 1);
+  }
   // what a whole failed sequence costs on a group of that size
-  sequenceRisk(size) {
+  sequenceRisk(size, id) {
+    const plan = id ? this.planFor(id) : { steps: this.steps };
     let total = 0;
-    for (let k = 1; k <= this.steps; k++) total += this.stakeAt(k) * size;
+    for (let k = 1; k <= plan.steps; k++) total += this.stakeAt(k, id) * size;
     return total;
   }
   // The simulation acts at the reading's simDepth, which is deliberately shallower than
@@ -127,10 +157,7 @@ export class PaperBook {
   // that stay, starts the newcomers at zero, and voids anything staked on a pattern that
   // has just been switched off - its sequence will never be settled now.
   setPatterns(ids) {
-    const want = (ids || []).filter((id) => {
-      const r = this.rules.get(id);
-      return r && r.kind !== 'streak';
-    });
+    const want = (ids || []).filter((id) => canBet(this.rules.get(id)));
     const dropped = this.patterns.filter((id) => !want.includes(id));
     for (const t of this.tables.values()) {
       for (const id of dropped) {
@@ -190,27 +217,30 @@ export class PaperBook {
       if (!bet) continue;
       t.pending[id] = null;
       const st = this.byPattern[id];
-      const won = bet.group === 'A' ? A_SET.has(n) : !A_SET.has(n);
+      const won = hits(bet.group, n);
       const entry = {
         at: Date.now(), tableId, table: t.name, pattern: id,
         label: (this.rules.get(id) || {}).label || id,
         group: bet.group, numbers: SIZE[bet.group], step: bet.step, per: bet.per,
         staked: bet.total, spin: n, won, returned: 0, pnl: -bet.total, cash: 0,
       };
+      const plan = this.planFor(id);
       if (won) {
         const ret = 36 * bet.per;
         this.cash += ret;
         st.returned += ret;
         st.wins += 1;
-        st.winsAtStep[bet.step - 1] += 1;
+        if (bet.step <= st.winsAtStep.length) st.winsAtStep[bet.step - 1] += 1;
         entry.returned = ret;
         entry.pnl = ret - bet.total;
-        t.cycle[id] = this.afterWin === 'stop' ? 'done' : null;
-      } else if (bet.step >= this.steps) {
+        // an everySpin pattern keeps playing: the stake resets, the table does not end
+        t.cycle[id] = (plan.everySpin || this.afterWin !== 'stop') ? null : 'done';
+      } else if (bet.step >= plan.steps) {
         st.losses += 1;
-        t.cycle[id] = this.afterLoss === 'stop' ? 'done' : null;
+        // likewise after a full ladder: start again at the base stake rather than stop
+        t.cycle[id] = (plan.everySpin || this.afterLoss !== 'stop') ? null : 'done';
       } else {
-        t.cycle[id] = { step: bet.step + 1 };    // double, wait for the next decider
+        t.cycle[id] = { step: bet.step + 1 };    // double, and bet again
       }
       entry.cash = this.cash;
       entry.sequenceOver = t.cycle[id] === 'done' || t.cycle[id] === null;
@@ -223,14 +253,21 @@ export class PaperBook {
       if (t.cycle[id] === 'done') continue;
       if (this.allow && !this.allow(tableId, id)) continue;   // not a picked pair
       const s = states && states[id];
-      if (!s || s.phase !== PHASE.INTERRUPTED) continue;      // no decider pending
-      if (s.count > -this.depthFor(id)) continue;             // not deep enough
-      const group = resetGroup(this.rules.get(id), s);
+      if (!s) continue;
+      const rule = this.rules.get(id);
+      const plan = this.planFor(id);
+      // An everySpin pattern stakes on every spin: there is no decider to wait for and
+      // no depth to reach, because its count is the miss streak the martingale follows.
+      if (!plan.everySpin) {
+        if (s.phase !== PHASE.INTERRUPTED) continue;          // no decider pending
+        if (s.count > -this.depthFor(id)) continue;           // not deep enough
+      }
+      const group = resetGroup(rule, s);
       if (!group) continue;
 
       const st = this.byPattern[id];
       const step = t.cycle[id] ? t.cycle[id].step : 1;
-      const per = this.stakeAt(step);
+      const per = this.stakeAt(step, id);
       const total = per * SIZE[group];
       if (this.cash < total) {                                // cannot cover it
         st.skipped += 1;
@@ -308,10 +345,15 @@ export class PaperBook {
     const perPattern = this.patterns.map((id) => {
       const s = this.byPattern[id];
       const settled = s.wins + s.losses;
+      const plan = this.planFor(id);
       return {
         pattern: id,
         label: (this.rules.get(id) || {}).label || id,
-        depth: this.depthFor(id),
+        depth: plan.everySpin ? null : this.depthFor(id),
+        unit: plan.unit,
+        steps: plan.steps,
+        everySpin: plan.everySpin,
+        stakes: Array.from({ length: plan.steps }, (_, i) => this.stakeAt(i + 1, id)),
         ...s,
         settled,
         winRate: settled ? s.wins / settled : null,

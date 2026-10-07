@@ -135,7 +135,7 @@ footer{padding:20px;font-family:var(--f-mono);font-size:9px;letter-spacing:.12em
     <span class="meta" id="patmeta"></span></div>
   <table>
     <thead><tr>
-      <th>On</th><th>Pattern</th><th>Bets at</th><th class="num">Sequences</th><th class="num">Won</th>
+      <th>On</th><th>Pattern</th><th>Bets</th><th>Stake</th><th class="num">Sequences</th><th class="num">Won</th>
       <th class="num">Lost all</th><th class="num">Staked</th><th class="num">P/L</th>
     </tr></thead>
     <tbody id="patterns"></tbody>
@@ -244,8 +244,10 @@ function paintPatterns(){
     return '<tr>' +
       '<td><span class="sw' + (b.on ? ' on' : '') + '" data-sim="' + b.id + '"></span></td>' +
       '<td class="rd ' + sideCls(b.side) + '">' + esc(b.label) + '</td>' +
-      '<td class="mono">−' + b.depth +
-        (b.tables != null ? ' <span style="opacity:.6">· ' + b.tables + ' tables</span>' : '') + '</td>' +
+      '<td class="mono">' + (p.everySpin ? 'every spin' : '−' + b.depth) +
+        (b.tables != null ? '<br><span style="opacity:.6;font-size:9px">' + b.tables +
+          ' table' + (b.tables === 1 ? '' : 's') + '</span>' : '') + '</td>' +
+      '<td class="mono">' + (p.stakes ? p.stakes.map(money).join('/') : '—') + '</td>' +
       '<td class="num">' + p.sequences + '</td>' +
       '<td class="num">' + p.wins + (p.winRate != null ? ' <span class="mono">' + pct(p.winRate) + '</span>' : '') + '</td>' +
       '<td class="num ' + (p.losses ? 'bad' : '') + '">' + p.losses + '</td>' +
@@ -328,10 +330,11 @@ function render(){
         '<a href="/patterns">Patterns</a> page'
       : '<b>no tables</b> — arm them with the bell on the <a href="/patterns">Patterns</a> page';
   $('#note').innerHTML = d.running
-    ? 'Playing ' + scope + '. Each pattern bets on its own count <b>breaking</b> once it reaches its depth: ' +
-      money(d.unit) + ' on every number of the group that would reset it, doubling through ' +
-      d.stakes.map(money).join('/') + '. A full sequence risks <b>' + money(d.risk18) +
-      '</b> (18 numbers) or <b>' + money(d.risk19) + '</b> (19).'
+    ? 'Playing ' + scope + '. Each pattern bets on its own count <b>breaking</b>: the unit on ' +
+      'every number of the group that would reset it, doubling on a loss. The run readings ' +
+      'wait for a decider at their depth and stake ' + d.stakes.map(money).join('/') + '; ' +
+      '<b>Andreas Deluxe</b> bets every spin on the 15 group-C numbers. Per-pattern stakes ' +
+      'are in the table below.'
     : 'Stopped. Press Start and it follows the live spins on ' + scope + ', staking nothing real.';
   paintCards();
   paintCurve();

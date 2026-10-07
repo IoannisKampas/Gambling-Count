@@ -1,6 +1,6 @@
 // The paper-betting contract: when it stakes, on what, how much, and when it stops.
 // Run: node tools/paper-test.mjs   (npm run test:paper)
-import { PaperBook, BETTABLE, resetGroup } from '../src/paper.mjs';
+import { PaperBook, BETTABLE, DEFAULT_PATTERNS, resetGroup } from '../src/paper.mjs';
 import { READINGS, createState, applySpin, groupOf, GROUP_A, GROUP_B } from '../src/patterns.mjs';
 
 let pass = 0, fail = 0;
@@ -104,12 +104,16 @@ section('what it bets on');
 }
 {
   // the rule itself, independent of any sequence
-  const st = { runGroup: 'B', originGroup: 'A' };
+  // armed, as a run reading is when its decider is pending
+  const st = { phase: 'INTERRUPTED', runGroup: 'B', originGroup: 'A' };
   ok(resetGroup(rule('allin1'), st) === 'B', 'All in 1 resets when B carries on');
   ok(resetGroup(rule('monada'), st) === 'A', 'Monada resets when A returns');
-  ok(resetGroup(rule('andreas'), st) === null, 'a streak reading has no decider to bet');
-  ok(!BETTABLE.includes('andreas') && !BETTABLE.includes('serie1'),
-    'so the streak readings are not bettable', BETTABLE.join(','));
+  // a streak reading is broken by its own group, whatever the state
+  ok(resetGroup(rule('andreas'), { phase: 'BUILDING' }) === 'C',
+    'Andreas Deluxe is broken by a group-C number');
+  ok(BETTABLE.includes('andreas'), 'and is bettable, because it has a stake plan');
+  ok(!BETTABLE.includes('serie1') && !BETTABLE.includes('serie2'),
+    'Serie has neither a decider nor a plan, so it stays out', BETTABLE.join(','));
 }
 
 section('the money');
@@ -257,6 +261,81 @@ section('it only plays the tables that were picked');
   ok(b.snapshot().totals.losses === 1 && b.snapshot().totals.bets === 4,
     'four bets, then the sequence is over', JSON.stringify(b.snapshot().totals));
   ok(10000 - b.cash === 75 * 18, 'having staked $1,350', String(10000 - b.cash));
+}
+
+section('Andreas Deluxe: every spin, its own stake');
+{
+  const C = 0, NC = 1;                  // 0 is in group C, 1 is not
+  const b = new PaperBook({ budget: 10000, start: true, patterns: ['andreas'], readings: READINGS });
+  ok(BETTABLE.includes('andreas'), 'it is bettable');
+  ok(DEFAULT_PATTERNS.includes('andreas'), 'and simulated by default');
+  const plan = b.planFor('andreas');
+  ok(plan.unit === 2 && plan.steps === 4 && plan.everySpin === true,
+    '$2 a number, four steps, every spin', JSON.stringify(plan));
+
+  const t = table(b, ['andreas'], { tableId: 'speed', name: 'Speed Roulette 1' });
+  // the first spin stakes for the next one: $2 on each of the 15 group-C numbers
+  t.run([NC]);
+  const open1 = b.openBets();
+  ok(open1.length === 1 && open1[0].group === 'C' && open1[0].numbers === 15,
+    'it bets the 15 group-C numbers', JSON.stringify(open1[0]));
+  ok(open1[0].per === 2 && open1[0].total === 30, '$2 each, $30 a spin', JSON.stringify(open1[0]));
+
+  // a miss doubles, with no count depth to wait for
+  t.run([NC]);
+  const open2 = b.openBets();
+  ok(open2[0].step === 2 && open2[0].per === 4 && open2[0].total === 60,
+    'a miss doubles to $4 a number', JSON.stringify(open2[0]));
+  ok(b.snapshot().totals.bets === 2, 'and it bet on both spins', String(b.snapshot().totals.bets));
+
+  // a group-C number pays 36x the stake on that number and resets the ladder
+  const before = b.cash;
+  t.run([C]);
+  ok(b.cash - before === 36 * 4 - 30, 'a hit at step 2 returns 36x$4 less the next stake',
+    String(b.cash - before));
+  const open3 = b.openBets();
+  ok(open3[0].step === 1 && open3[0].per === 2,
+    'and the next spin is back to the base stake', JSON.stringify(open3[0]));
+  ok(b.snapshot().totals.wins === 1, 'the win is recorded');
+}
+{
+  const C = 0, NC = 1;
+  const b = new PaperBook({ budget: 10000, start: true, patterns: ['andreas'], readings: READINGS });
+  const t = table(b, ['andreas'], { tableId: 'speed', name: 'Speed Roulette 1' });
+  // four misses in a row lose the whole ladder, then it starts again rather than stopping
+  t.run([NC, NC, NC, NC, NC]);
+  const s = b.snapshot();
+  ok(s.totals.losses === 1, 'four misses lose the ladder', JSON.stringify(s.totals));
+  ok(10000 - b.cash === (2 + 4 + 8 + 16) * 15 + 30,
+    'costing $450, with $30 already staked on the next spin', String(10000 - b.cash));
+  const open = b.openBets();
+  ok(open.length === 1 && open[0].step === 1,
+    'it keeps playing at the base stake - a table is never finished with',
+    JSON.stringify(open[0]));
+}
+{
+  // it plays only the tables picked for it
+  const C = 0, NC = 1;
+  const b = new PaperBook({
+    budget: 10000, start: true, patterns: ['andreas'], readings: READINGS,
+    allow: (tableId) => tableId === 'speed',
+  });
+  table(b, ['andreas'], { tableId: 'speed', name: 'Speed Roulette 1' }).run([NC, NC]);
+  table(b, ['andreas'], { tableId: 'other', name: 'Another wheel' }).run([NC, NC]);
+  const open = b.openBets();
+  ok(open.length === 1 && open[0].table === 'Speed Roulette 1',
+    'only the picked wheel is played', JSON.stringify(open.map((o) => o.table)));
+}
+{
+  // the run readings are untouched by all this
+  const b = new PaperBook({ budget: 10000, start: true, patterns: ['monada'], readings: READINGS,
+    depths: { monada: 2 } });
+  const plan = b.planFor('monada');
+  ok(plan.unit === 5 && plan.steps === 4 && plan.everySpin === false,
+    'Monada still stakes $5 on a decider', JSON.stringify(plan));
+  const t = table(b, ['monada']);
+  t.run([A, B]);                       // armed but nowhere near the depth
+  ok(b.openBets().length === 0, 'and waits for its count, not every spin');
 }
 
 section('when it stops');

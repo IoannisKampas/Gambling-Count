@@ -189,7 +189,7 @@ if (CFG.mode === 'combined' || CFG.mode === 'both') {
 
 console.log('THE ARITHMETIC, one sequence:');
 console.log('');
-for (const size of [18, 19]) {
+for (const size of [15, 18, 19]) {
   const miss = (37 - size) / 37;
   const pAll = miss ** CFG.steps;
   let ev = -pAll * seqTotal * size;
@@ -201,7 +201,8 @@ for (const size of [18, 19]) {
   console.log('  ' + (size + '-number group').padEnd(17) + 'completes ' + pct(1 - pAll) +
     ' of the time, loses all ' + CFG.steps + ' ' + pct(pAll) + ' (' + money(seqTotal * size) + ')');
   console.log('  ' + ' '.repeat(17) + 'expected ' + money(ev) + ' per sequence' +
-    (size === 19 ? '   <- 19 numbers cannot recover: a win at step 5 or 6 still loses' : ''));
+    (size === 19 ? '   <- 19 numbers: a win at a late step still loses'
+      : size === 15 ? '   <- group C, as Andreas Deluxe bets it, every spin' : ''));
 }
 console.log('');
 console.log('The wheel has no memory: the trigger changes WHEN you bet, never what the bet');
